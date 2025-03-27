@@ -563,8 +563,9 @@ router.post("/dailymotion", (req, res) => {
 // Endpoint untuk mengunduh video YouTube
 router.post("/youtube/download", async (req, res) => {
 	try {
-		const { url, removeMetadata = true } = req.body;
+		const { url, mute = false, removeMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video YouTube:', url);
+		console.log('Status mute:', mute);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -619,11 +620,24 @@ router.post("/youtube/download", async (req, res) => {
 
 		// Hapus metadata dari video jika opsi diaktifkan
 		if (removeMetadata) {
+			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
 			} catch (error) {
 				console.error('Error saat menghapus metadata:', error);
-				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
 			}
 		}
 
@@ -745,8 +759,9 @@ router.post("/tiktok/download", async (req, res) => {
 // Endpoint untuk mengunduh video Facebook
 router.post("/facebook/download", async (req, res) => {
 	try {
-		const { url, removeMetadata = true } = req.body;
+		const { url, mute = false, removeMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Facebook:', url);
+		console.log('Status mute:', mute);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -802,11 +817,24 @@ router.post("/facebook/download", async (req, res) => {
 
 		// Hapus metadata dari video jika opsi diaktifkan
 		if (removeMetadata) {
+			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
 			} catch (error) {
 				console.error('Error saat menghapus metadata:', error);
-				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
 			}
 		}
 
