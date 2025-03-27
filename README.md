@@ -14,6 +14,10 @@ API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung
 - 🗑️ Opsi penghapusan metadata
 - 💾 Download tanpa watermark (untuk TikTok)
 - 📝 Informasi lengkap video (judul, deskripsi, dll)
+- 🔒 Keamanan:
+  - CORS Protection
+  - Rate Limiting
+  - Request Validation
 
 ## 🛠️ Prasyarat
 
@@ -199,23 +203,32 @@ Download seluruh video dalam playlist YouTube.
 }
 ```
 
-## ⚠️ Catatan Penting
+## 🔐 Keamanan & Batasan API
 
-1. **Rate Limiting:**
-   - Harap gunakan API dengan bijak
-   - Hindari request berlebihan dalam waktu singkat
+1. **CORS (Cross-Origin Resource Sharing):**
+   - API ini dilindungi oleh CORS
+   - Hanya domain yang diizinkan yang dapat mengakses API
+   - Untuk mengakses dari domain lain, hubungi administrator
 
-2. **Video Metadata:**
-   - Opsi `removeMetadata` akan memperlambat proses download
-   - Metadata yang dihapus tidak dapat dikembalikan
+2. **Rate Limiting:**
+   - Maksimal 100 request per IP dalam 15 menit
+   - Jika melebihi batas, akan mendapat response error 429 (Too Many Requests)
+   - Tunggu beberapa menit untuk request kembali
 
-3. **Kompatibilitas:**
-   - Pastikan URL video dapat diakses publik
-   - Beberapa video mungkin dilindungi atau dibatasi
+3. **Validasi Request:**
+   - Setiap request akan divalidasi
+   - URL video harus valid dan dapat diakses
+   - Format request body harus sesuai dokumentasi
 
-4. **Kualitas Video:**
-   - Kualitas maksimum tergantung pada video sumber
-   - Format yang tersedia bervariasi antar platform
+4. **Pembatasan Bandwidth:**
+   - Ada batasan ukuran file yang dapat didownload
+   - Video yang terlalu besar mungkin ditolak
+   - Gunakan format video yang sesuai kebutuhan
+
+5. **Penggunaan API:**
+   - API ini untuk penggunaan personal/development
+   - Untuk penggunaan komersial, hubungi administrator
+   - Hindari penggunaan yang berlebihan
 
 ## 🤝 Kontribusi
 
@@ -234,4 +247,16 @@ Project ini dilisensikan di bawah [MIT License](LICENSE).
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - [FFmpeg](https://ffmpeg.org/)
 - [Node.js](https://nodejs.org/)
+
+## 📞 Kontak & Dukungan
+
+Jika Anda membutuhkan:
+- Akses khusus untuk domain Anda
+- Peningkatan limit rate
+- Penggunaan untuk keperluan komersial
+- Bantuan teknis lainnya
+
+Silakan hubungi:
+- Email: [masalfi@gmail.com](mailto:masalfi@gmail.com)
+- GitHub: [@masalfi](https://github.com/masalfi)
 
