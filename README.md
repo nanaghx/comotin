@@ -1,6 +1,6 @@
 # 📥 Social Media Downloader API
 
-API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung YouTube, TikTok, Facebook, dan Instagram dengan berbagai pilihan kualitas video.
+API untuk mengunduh video dari berbagai platform media sosial seperti Instagram, YouTube, TikTok, dan Facebook.
 
 ## ✨ Fitur Utama
 
@@ -23,13 +23,15 @@ API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung
 - Node.js (v14+)
 - FFmpeg
 - yt-dlp
+- Express.js
+- Puppeteer (untuk scraping)
 
 ## ⚙️ Instalasi
 
 1. **Clone Repository**
 ```bash
-git clone https://github.com/masalfi/API-Social-Media-Downloader.git
-cd API-Social-Media-Downloader
+git clone https://github.com/username/Social-Media-Downloader.git
+cd Social-Media-Downloader
 ```
 
 2. **Install Dependencies**
@@ -79,7 +81,7 @@ Mendeteksi platform dari URL video yang diberikan.
 **Request Body:**
 ```json
 {
-    "url": "URL_VIDEO"
+    "url": "https://www.instagram.com/p/example"
 }
 ```
 
@@ -87,77 +89,26 @@ Mendeteksi platform dari URL video yang diberikan.
 ```json
 {
     "status": "success",
-    "platform": "youtube",
-    "data": {
-        "title": "Judul Video",
-        "duration": "300",
-        "thumbnail": "URL_THUMBNAIL",
-        "description": "Deskripsi Video",
-        // ... data lainnya
-    }
+    "platform": "instagram",
+    "owner": "username",
+    "displayUrl": "thumbnail_url",
+    "caption": "video_caption",
+    "title": "video_title",
+    "duration": 60,
+    "totalViews": 1000,
+    "postUrl": "original_url",
+    "dataFormats": [
+        {
+            "dataDownload": "download_url",
+            "format": "720p",
+            "ext": "mp4",
+            "filesize": 1234567
+        }
+    ]
 }
 ```
 
-### 2. Download Video YouTube
-Download video dari YouTube dengan berbagai opsi kualitas.
-
-**Endpoint:** `POST /api/youtube/download`
-
-**Request Body:**
-```json
-{
-    "url": "URL_YOUTUBE",
-    "removeMetadata": true  // opsional, default: true
-}
-```
-
-**Response Success:**
-```json
-{
-    "status": "success",
-    "data": {
-        "title": "Judul Video",
-        "owner": "Nama Channel",
-        "duration": "300",
-        "dataFormats": [
-            {
-                "format": "720p",
-                "filesize": "10000000",
-                "url": "URL_DOWNLOAD"
-            }
-            // ... format lainnya
-        ]
-    }
-}
-```
-
-### 3. Download Video TikTok
-Download video TikTok tanpa watermark.
-
-**Endpoint:** `POST /api/tiktok/download`
-
-**Request Body:**
-```json
-{
-    "url": "URL_TIKTOK",
-    "removeMetadata": true  // opsional, default: true
-}
-```
-
-### 4. Download Video Facebook
-Download video dari Facebook dengan kualitas terbaik.
-
-**Endpoint:** `POST /api/facebook/download`
-
-**Request Body:**
-```json
-{
-    "url": "URL_FACEBOOK",
-    "removeMetadata": true  // opsional, default: true
-}
-```
-
-### 5. Download Video Instagram
+### 2. Download Video Instagram
 Download video dari Instagram (post/reels).
 
 **Endpoint:** `POST /api/instagram/download`
@@ -165,10 +116,73 @@ Download video dari Instagram (post/reels).
 **Request Body:**
 ```json
 {
-    "url": "URL_INSTAGRAM",
-    "removeMetadata": true  // opsional, default: true
+    "url": "https://www.instagram.com/p/example",
+    "mute": false,
+    "removeMetadata": true
 }
 ```
+
+**Parameter:**
+- `url`: URL video Instagram (wajib)
+- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
+- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+
+### 3. Download Video YouTube
+Download video dari YouTube dengan berbagai opsi kualitas.
+
+**Endpoint:** `POST /api/youtube/download`
+
+**Request Body:**
+```json
+{
+    "url": "https://www.youtube.com/watch?v=example",
+    "mute": false,
+    "removeMetadata": true
+}
+```
+
+**Parameter:**
+- `url`: URL video YouTube (wajib)
+- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
+- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+
+### 4. Download Video TikTok
+Download video TikTok tanpa watermark.
+
+**Endpoint:** `POST /api/tiktok/download`
+
+**Request Body:**
+```json
+{
+    "url": "https://www.tiktok.com/@username/video/example",
+    "mute": false,
+    "removeMetadata": true
+}
+```
+
+**Parameter:**
+- `url`: URL video TikTok (wajib)
+- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
+- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+
+### 5. Download Video Facebook
+Download video dari Facebook dengan kualitas terbaik.
+
+**Endpoint:** `POST /api/facebook/download`
+
+**Request Body:**
+```json
+{
+    "url": "https://www.facebook.com/watch?v=example",
+    "mute": false,
+    "removeMetadata": true
+}
+```
+
+**Parameter:**
+- `url`: URL video Facebook (wajib)
+- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
+- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
 
 ### 6. Download Playlist YouTube
 Download seluruh video dalam playlist YouTube.
@@ -178,7 +192,41 @@ Download seluruh video dalam playlist YouTube.
 **Request Body:**
 ```json
 {
-    "url": "URL_PLAYLIST"
+    "url": "https://www.youtube.com/playlist?list=example"
+}
+```
+
+**Parameter:**
+- `url`: URL playlist YouTube (wajib)
+
+**Response:**
+```json
+{
+    "status": "success",
+    "dataDownloads": [
+        {
+            "ownerUrl": "channel_url",
+            "ownerId": "channel_id",
+            "channelUrl": "channel_url",
+            "uploader": "channel_name",
+            "totalViews": 1000,
+            "urlId": "video_id",
+            "thumbnail": "thumbnail_url",
+            "description": "video_description",
+            "filename": "video_filename",
+            "duration": 60,
+            "title": "video_title",
+            "categories": ["category1", "category2"],
+            "dataFormats": [
+                {
+                    "dataDownload": "download_url",
+                    "format": "720p",
+                    "ext": "mp4",
+                    "filesize": 1234567
+                }
+            ]
+        }
+    ]
 }
 ```
 

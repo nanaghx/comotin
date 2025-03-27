@@ -23,46 +23,68 @@ function toSupportedFormat(url) {
 // Fungsi untuk menghapus metadata menggunakan ffmpeg
 async function removeMetadata(inputBuffer) {
 	return new Promise((resolve, reject) => {
-		// Buat file temporary untuk input
 		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
 		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
 
-		// Tulis buffer ke file temporary
-		fs.writeFileSync(tempInput, inputBuffer);
+		try {
+			// Tulis buffer ke file temporary
+			fs.writeFileSync(tempInput, inputBuffer);
+			console.log('File input dibuat:', tempInput);
 
-		// Jalankan ffmpeg untuk menghapus metadata
-		const ffmpeg = spawn('ffmpeg', [
-			'-i', tempInput,
-			'-map_metadata', '-1',
-			'-c:v', 'copy',
-			'-c:a', 'copy',
-			tempOutput
-		]);
+			// Jalankan ffmpeg untuk menghapus metadata
+			const ffmpeg = spawn('ffmpeg', [
+				'-i', tempInput,
+				'-map_metadata', '-1',
+				'-c:v', 'copy',
+				'-c:a', 'copy',
+				'-y',
+				tempOutput
+			]);
 
-		let errorOutput = '';
+			let ffmpegOutput = '';
 
-		ffmpeg.stderr.on('data', (data) => {
-			errorOutput += data.toString();
-		});
+			ffmpeg.stderr.on('data', (data) => {
+				ffmpegOutput += data.toString();
+				console.log('ffmpeg:', data.toString());
+			});
 
-		ffmpeg.on('close', (code) => {
-			// Hapus file temporary input
-			fs.unlinkSync(tempInput);
-
-			if (code === 0) {
-				// Baca file output
-				const outputBuffer = fs.readFileSync(tempOutput);
-				// Hapus file temporary output
-				fs.unlinkSync(tempOutput);
-				resolve(outputBuffer);
-			} else {
-				// Hapus file temporary output jika ada
-				if (fs.existsSync(tempOutput)) {
-					fs.unlinkSync(tempOutput);
+			ffmpeg.on('close', (code) => {
+				// Hapus file temporary input
+				try {
+					fs.unlinkSync(tempInput);
+					console.log('File input dihapus');
+				} catch (err) {
+					console.error('Error menghapus file input:', err);
 				}
-				reject(new Error(`ffmpeg process failed with code ${code}: ${errorOutput}`));
-			}
-		});
+
+				if (code === 0) {
+					try {
+						const outputBuffer = fs.readFileSync(tempOutput);
+						fs.unlinkSync(tempOutput);
+						console.log('File output dihapus');
+						resolve(outputBuffer);
+					} catch (err) {
+						reject(new Error('Error membaca file output: ' + err.message));
+					}
+				} else {
+					// Hapus file output jika ada error
+					try {
+						if (fs.existsSync(tempOutput)) {
+							fs.unlinkSync(tempOutput);
+						}
+					} catch (err) {
+						console.error('Error menghapus file output:', err);
+					}
+					reject(new Error('ffmpeg gagal dengan kode ' + code + ': ' + ffmpegOutput));
+				}
+			});
+
+			ffmpeg.on('error', (err) => {
+				reject(new Error('Error menjalankan ffmpeg: ' + err.message));
+			});
+		} catch (err) {
+			reject(new Error('Error dalam removeMetadata: ' + err.message));
+		}
 	});
 }
 
@@ -563,9 +585,10 @@ router.post("/dailymotion", (req, res) => {
 // Endpoint untuk mengunduh video YouTube
 router.post("/youtube/download", async (req, res) => {
 	try {
-		const { url, mute = false, removeMetadata = true } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video YouTube:', url);
 		console.log('Status mute:', mute);
+		console.log('Status shouldRemoveMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -619,13 +642,14 @@ router.post("/youtube/download", async (req, res) => {
 		});
 
 		// Hapus metadata dari video jika opsi diaktifkan
-		if (removeMetadata) {
+		if (shouldRemoveMetadata) {
 			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
 				console.log('Metadata berhasil dihapus');
 			} catch (error) {
 				console.error('Error saat menghapus metadata:', error);
+				// Lanjutkan tanpa menghapus metadata jika terjadi error
 			}
 		}
 
@@ -667,7 +691,7 @@ router.post("/youtube/download", async (req, res) => {
 // Endpoint untuk mengunduh video TikTok
 router.post("/tiktok/download", async (req, res) => {
 	try {
-		const { url, removeMetadata = true } = req.body;
+		const { url, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video TikTok:', url);
 
 		// Set header untuk download
@@ -724,7 +748,7 @@ router.post("/tiktok/download", async (req, res) => {
 		});
 
 		// Hapus metadata dari video jika opsi diaktifkan
-		if (removeMetadata) {
+		if (shouldRemoveMetadata) {
 			try {
 				buffer = await removeMetadata(buffer);
 			} catch (error) {
@@ -759,7 +783,7 @@ router.post("/tiktok/download", async (req, res) => {
 // Endpoint untuk mengunduh video Facebook
 router.post("/facebook/download", async (req, res) => {
 	try {
-		const { url, mute = false, removeMetadata = true } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Facebook:', url);
 		console.log('Status mute:', mute);
 
@@ -816,7 +840,7 @@ router.post("/facebook/download", async (req, res) => {
 		});
 
 		// Hapus metadata dari video jika opsi diaktifkan
-		if (removeMetadata) {
+		if (shouldRemoveMetadata) {
 			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
@@ -917,10 +941,10 @@ router.post("/detect-platform", async (req, res) => {
 // Endpoint untuk mengunduh video Instagram
 router.post("/instagram/download", async (req, res) => {
 	try {
-		const { url, mute = false, removeMetadata = true } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Instagram:', url);
 		console.log('Status mute:', mute);
-		console.log('Status removeMetadata:', removeMetadata);
+		console.log('Status shouldRemoveMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -976,7 +1000,7 @@ router.post("/instagram/download", async (req, res) => {
 		});
 
 		// Hapus metadata dari video jika opsi diaktifkan
-		if (removeMetadata) {
+		if (shouldRemoveMetadata) {
 			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
@@ -1023,7 +1047,7 @@ router.post("/instagram/download", async (req, res) => {
 
 router.post("/:platform/download", async (req, res) => {
 	try {
-		const { url, mute = false, removeMetadata = true, format = 'video' } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true, format = 'video' } = req.body;
 		const platform = req.params.platform;
 		console.log(`Mencoba mengunduh dari ${platform}:`, url);
 		console.log('Status mute:', mute);
@@ -1081,7 +1105,7 @@ router.post("/:platform/download", async (req, res) => {
 		});
 
 		// Hapus metadata jika diminta
-		if (removeMetadata) {
+		if (shouldRemoveMetadata) {
 			console.log('Menghapus metadata...');
 			buffer = await removeMetadata(buffer);
 			console.log('Metadata berhasil dihapus');
