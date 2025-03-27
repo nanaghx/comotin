@@ -66,6 +66,54 @@ async function removeMetadata(inputBuffer) {
 	});
 }
 
+// Fungsi untuk menghapus audio menggunakan ffmpeg
+async function removeAudio(inputBuffer) {
+	return new Promise((resolve, reject) => {
+		// Buat file temporary untuk input
+		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
+		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
+
+		// Tulis buffer ke file temporary
+		fs.writeFileSync(tempInput, inputBuffer);
+
+		// Jalankan ffmpeg untuk menghapus audio
+		const ffmpeg = spawn('ffmpeg', [
+			'-i', tempInput,
+			'-c:v', 'copy',
+			'-an',  // Menghapus semua track audio
+			'-map', '0:v:0',  // Hanya mengambil track video
+			'-map_metadata', '-1',  // Hapus metadata
+			'-y',  // Overwrite output file
+			tempOutput
+		]);
+
+		let errorOutput = '';
+
+		ffmpeg.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
+
+		ffmpeg.on('close', (code) => {
+			// Hapus file temporary input
+			fs.unlinkSync(tempInput);
+
+			if (code === 0) {
+				// Baca file output
+				const outputBuffer = fs.readFileSync(tempOutput);
+				// Hapus file temporary output
+				fs.unlinkSync(tempOutput);
+				resolve(outputBuffer);
+			} else {
+				// Hapus file temporary output jika ada
+				if (fs.existsSync(tempOutput)) {
+					fs.unlinkSync(tempOutput);
+				}
+				reject(new Error(`ffmpeg process failed with code ${code}: ${errorOutput}`));
+			}
+		});
+	});
+}
+
 router.post("/instagram", async (req, res) => {
 	try {
 		const url_post = req.body.url;
@@ -908,6 +956,88 @@ router.post("/instagram/download", async (req, res) => {
 				message: error.message 
 			});
 		}
+	}
+});
+
+router.post("/:platform/download", async (req, res) => {
+	try {
+		const { url, format, mute, removeMetadata } = req.body;
+		const platform = req.params.platform;
+		console.log(`Mencoba mengunduh dari ${platform}:`, url);
+
+		// Konversi URL mobile ke format desktop untuk YouTube
+		let processedUrl = url;
+		if (platform === 'youtube' && url.includes('youtu.be/')) {
+			const videoId = url.split('youtu.be/')[1].split('?')[0];
+			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+		} else if (platform === 'youtube' && url.includes('youtube.com/shorts/')) {
+			const videoId = url.split('shorts/')[1].split('?')[0];
+			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+		}
+
+		// Buat array opsi yt-dlp
+		const ytDlpOptions = [
+			'--no-check-certificates',
+			'--no-warnings',
+			'--output', '-'
+		];
+
+		// Jika format audio diminta
+		if (format === 'audio') {
+			ytDlpOptions.push('--extract-audio', '--audio-format', 'mp3');
+		} else {
+			// Format normal dengan video dan audio
+			ytDlpOptions.push('--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
+		}
+
+		// Tambahkan URL ke opsi
+		ytDlpOptions.push(processedUrl);
+
+		// Jalankan yt-dlp
+		const process = spawn('yt-dlp', ytDlpOptions);
+
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata jika diminta
+		if (removeMetadata) {
+			buffer = await removeMetadata(buffer);
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			buffer = await removeAudio(buffer);
+			console.log('Audio berhasil dihapus');
+		}
+
+		// Set header response
+		res.setHeader('Content-Type', format === 'audio' ? 'audio/mpeg' : 'video/mp4');
+		res.setHeader('Content-Disposition', `attachment; filename=video_${mute ? 'mute_' : ''}${platform}.mp4`);
+
+		// Kirim file
+		res.send(buffer);
+	} catch (error) {
+		console.error('Error saat mengunduh:', error);
+		res.status(500).json({ status: "error", details: error.message });
 	}
 });
 

@@ -133,6 +133,15 @@
             font-size: 0.8rem;
             margin-top: 0.25rem;
         }
+
+        .btn-mute-active {
+            background: rgba(40, 167, 69, 0.2) !important;
+            border-color: rgba(40, 167, 69, 0.5) !important;
+        }
+
+        .btn-mute-active:hover {
+            background: rgba(40, 167, 69, 0.3) !important;
+        }
     </style>
 </head>
 <body>
@@ -197,70 +206,20 @@
             }
         });
 
-        async function downloadVideo() {
-            const url = document.getElementById('url').value;
-            const removeMetadata = document.getElementById('removeMetadata').checked;
-            if (!url) return;
-
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('result').innerHTML = '';
-
-            try {
-                // Deteksi platform
-                const response = await fetch('/api/detect-platform', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ url })
-                });
-
-                const data = await response.json();
-
-                if (data.status === 'success') {
-                    // Download video menggunakan metode POST
-                    const downloadResponse = await fetch(`/api/${data.platform}/download`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ 
-                            url,
-                            removeMetadata
-                        })
-                    });
-
-                    if (!downloadResponse.ok) {
-                        throw new Error('Gagal mengunduh video');
-                    }
-
-                    // Buat blob dari response dan download file
-                    const blob = await downloadResponse.blob();
-                    const downloadUrl = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = `video_${data.platform}.mp4`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(downloadUrl);
-                    document.body.removeChild(a);
-                } else {
-                    document.getElementById('result').innerHTML = `
-                        <div class="alert alert-danger">
-                            ${data.message || 'Terjadi kesalahan saat mengunduh video'}
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                document.getElementById('result').innerHTML = `
-                    <div class="alert alert-danger">
-                        Terjadi kesalahan: ${error.message}
-                    </div>
-                `;
-            } finally {
-                document.getElementById('loading').style.display = 'none';
+        let isMuteActive = false;
+        document.getElementById('muteBtn').addEventListener('click', () => {
+            const muteBtn = document.getElementById('muteBtn');
+            isMuteActive = !isMuteActive;
+            
+            // Toggle class untuk mengubah warna tombol
+            if (isMuteActive) {
+                muteBtn.classList.add('btn-mute-active');
+                muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> mute (aktif)';
+            } else {
+                muteBtn.classList.remove('btn-mute-active');
+                muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> mute';
             }
-        }
+        });
 
         // Event listeners untuk tombol
         document.getElementById('autoBtn').addEventListener('click', downloadVideo);
@@ -323,7 +282,15 @@
             }
         });
 
-        document.getElementById('muteBtn').addEventListener('click', async () => {
+        // Enter key handler
+        document.getElementById('url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                downloadVideo();
+            }
+        });
+
+        // Fungsi untuk mengunduh video
+        async function downloadVideo() {
             const url = document.getElementById('url').value;
             const removeMetadata = document.getElementById('removeMetadata').checked;
             if (!url) return;
@@ -343,7 +310,7 @@
                 const data = await response.json();
 
                 if (data.status === 'success') {
-                    // Download video tanpa suara
+                    // Download video
                     const downloadResponse = await fetch(`/api/${data.platform}/download`, {
                         method: 'POST',
                         headers: {
@@ -351,7 +318,7 @@
                         },
                         body: JSON.stringify({ 
                             url,
-                            mute: true,
+                            mute: isMuteActive,
                             removeMetadata
                         })
                     });
@@ -364,7 +331,7 @@
                     const downloadUrl = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = downloadUrl;
-                    a.download = `video_mute_${data.platform}.mp4`;
+                    a.download = `video_${isMuteActive ? 'mute_' : ''}${data.platform}.mp4`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(downloadUrl);
@@ -379,14 +346,7 @@
             } finally {
                 document.getElementById('loading').style.display = 'none';
             }
-        });
-
-        // Enter key handler
-        document.getElementById('url').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                downloadVideo();
-            }
-        });
+        }
     </script>
 </body>
 </html> 
