@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const downloaderRouter = require('./routes/downloader');
-const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -14,19 +13,8 @@ const corsOptions = {
     credentials: false // Diubah menjadi false karena menggunakan origin: '*'
 };
 
-// Konfigurasi Rate Limiter
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 menit
-    max: 100, // Maksimal 100 request per IP
-    message: {
-        status: 'error',
-        message: 'Terlalu banyak request dari IP ini, silakan coba lagi setelah 15 menit'
-    }
-});
-
 // Middleware
 app.use(cors(corsOptions));
-app.use(limiter);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 

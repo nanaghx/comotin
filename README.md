@@ -16,7 +16,6 @@ API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung
 - 📝 Informasi lengkap video (judul, deskripsi, dll)
 - 🔒 Keamanan:
   - Public API Access
-  - Rate Limiting
   - Request Validation
 
 ## 🛠️ Prasyarat
@@ -208,24 +207,20 @@ Download seluruh video dalam playlist YouTube.
 1. **Akses API:**
    - API dapat diakses dari domain manapun
    - Tidak ada pembatasan CORS
+   - Tidak ada batasan jumlah request
    - Cocok untuk penggunaan publik
 
-2. **Rate Limiting:**
-   - Maksimal 100 request per IP dalam 15 menit
-   - Jika melebihi batas, akan mendapat response error 429 (Too Many Requests)
-   - Tunggu beberapa menit untuk request kembali
-
-3. **Validasi Request:**
+2. **Validasi Request:**
    - Setiap request akan divalidasi
    - URL video harus valid dan dapat diakses
    - Format request body harus sesuai dokumentasi
 
-4. **Pembatasan Bandwidth:**
+3. **Pembatasan Bandwidth:**
    - Ada batasan ukuran file yang dapat didownload
    - Video yang terlalu besar mungkin ditolak
    - Gunakan format video yang sesuai kebutuhan
 
-5. **Penggunaan API:**
+4. **Penggunaan API:**
    - API ini untuk penggunaan publik
    - Harap gunakan dengan bijak
    - Hindari penggunaan yang berlebihan
@@ -252,8 +247,6 @@ Project ini dilisensikan di bawah [MIT License](LICENSE).
 
 Jika Anda membutuhkan:
 - Akses khusus untuk domain Anda
-- Peningkatan limit rate
-- Penggunaan untuk keperluan komersial
 - Bantuan teknis lainnya
 
 Silakan hubungi:
