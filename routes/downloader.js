@@ -940,6 +940,8 @@ router.post("/detect-platform", async (req, res) => {
 		} else if (url.includes('dailymotion.com') || url.includes('dai.ly')) {
 			platform = 'dailymotion';
 			endpoint = '/api/dailymotion';
+			// Tambahkan peringatan untuk Dailymotion
+			console.warn('PERINGATAN: Untuk video Dailymotion, sebaiknya metadata dihapus untuk menghindari masalah DRM');
 		} else {
 			throw new Error('Platform tidak didukung');
 		}

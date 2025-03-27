@@ -263,8 +263,15 @@
         document.getElementById('submitBtn').addEventListener('click', downloadVideo);
         document.getElementById('audioBtn').addEventListener('click', async () => {
             const url = document.getElementById('url').value;
-            const removeMetadata = document.getElementById('removeMetadata').checked;
+            let removeMetadata = document.getElementById('removeMetadata').checked;
             if (!url) return;
+
+            // Paksa removeMetadata menjadi true untuk Dailymotion
+            if (url.includes('dailymotion.com') || url.includes('dai.ly')) {
+                removeMetadata = true;
+                document.getElementById('removeMetadata').checked = true;
+                console.log('URL Dailymotion terdeteksi, metadata akan dihapus secara otomatis');
+            }
 
             document.getElementById('loading').style.display = 'block';
             document.getElementById('result').innerHTML = '';
@@ -329,8 +336,15 @@
         // Fungsi untuk mengunduh video
         async function downloadVideo() {
             const url = document.getElementById('url').value;
-            const removeMetadata = document.getElementById('removeMetadata').checked;
+            let removeMetadata = document.getElementById('removeMetadata').checked;
             if (!url) return;
+
+            // Paksa removeMetadata menjadi true untuk Dailymotion
+            if (url.includes('dailymotion.com') || url.includes('dai.ly')) {
+                removeMetadata = true;
+                document.getElementById('removeMetadata').checked = true;
+                console.log('URL Dailymotion terdeteksi, metadata akan dihapus secara otomatis');
+            }
 
             document.getElementById('loading').style.display = 'block';
             document.getElementById('result').innerHTML = '';
