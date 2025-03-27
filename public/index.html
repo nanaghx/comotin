@@ -348,6 +348,7 @@
 
                 if (data.status === 'success') {
                     console.log('Status mute:', isMuteActive);
+                    console.log('Status removeMetadata:', removeMetadata);
                     // Download video
                     const downloadResponse = await fetch(`/api/${data.platform}/download`, {
                         method: 'POST',
@@ -357,7 +358,7 @@
                         body: JSON.stringify({ 
                             url,
                             mute: isMuteActive,
-                            removeMetadata,
+                            shouldRemoveMetadata: removeMetadata,
                             format: 'video'
                         })
                     });
