@@ -252,23 +252,38 @@ Download seluruh video dalam playlist YouTube.
 
 ## 🔐 Keamanan & Batasan API
 
-1. **Akses API:**
+1. **Rate Limiting:**
+   - Maksimal 10 request per IP address dalam 15 menit
+   - Response menyertakan header:
+     - `X-Remaining-Requests`: Jumlah request tersisa
+     - `X-Total-Limit`: Total limit (10)
+     - `X-Reset-Time`: Waktu reset dalam timestamp
+   - Saat limit tercapai, response akan menyertakan:
+     ```json
+     {
+       "status": "error",
+       "message": "Anda telah mencapai batas maksimal request (10 request per 15 menit). Silakan coba lagi dalam beberapa menit.",
+       "remainingRequests": 0,
+       "resetTime": "timestamp"
+     }
+     ```
+
+2. **Akses API:**
    - API dapat diakses dari domain manapun
    - Tidak ada pembatasan CORS
-   - Tidak ada batasan jumlah request
    - Cocok untuk penggunaan publik
 
-2. **Validasi Request:**
+3. **Validasi Request:**
    - Setiap request akan divalidasi
    - URL video harus valid dan dapat diakses
    - Format request body harus sesuai dokumentasi
 
-3. **Pembatasan Bandwidth:**
+4. **Pembatasan Bandwidth:**
    - Ada batasan ukuran file yang dapat didownload
    - Video yang terlalu besar mungkin ditolak
    - Gunakan format video yang sesuai kebutuhan
 
-4. **Penggunaan API:**
+5. **Penggunaan API:**
    - API ini untuk penggunaan publik
    - Harap gunakan dengan bijak
    - Hindari penggunaan yang berlebihan
