@@ -1,9 +1,33 @@
-const express = require("express");
-const downloader = require("./routes/downloader");
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const downloaderRouter = require('./routes/downloader');
 
 const app = express();
+const port = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
-app.use("/api", downloader);
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.listen(2020);
+// Routes
+app.use('/api', downloaderRouter);
+
+// Serve index.html for root path
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({
+        status: 'error',
+        message: 'Terjadi kesalahan pada server'
+    });
+});
+
+app.listen(port, () => {
+    console.log(`Server berjalan di http://localhost:${port}`);
+});

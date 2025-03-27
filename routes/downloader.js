@@ -1,7 +1,14 @@
-const request = require("request");
+const axios = require("axios");
 const router = require("express").Router();
-const youtubeDl = require("youtube-dl");
+const YTDlpWrap = require("yt-dlp-wrap").default;
 const tiktokScraper = require("tiktok-scraper");
+const puppeteer = require('puppeteer');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const ytDlp = new YTDlpWrap();
 
 function toSupportedFormat(url) {
 	if (url.includes("list=")) {
@@ -13,395 +20,434 @@ function toSupportedFormat(url) {
 	return url;
 }
 
-router.post("/instagram", (req, res) => {
-	const url_post = req.body.url;
-	const split_url = url_post.split("/");
-	const ig_code = split_url[4];
+// Fungsi untuk menghapus metadata menggunakan ffmpeg
+async function removeMetadata(inputBuffer) {
+	return new Promise((resolve, reject) => {
+		// Buat file temporary untuk input
+		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
+		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
 
-	const url = `https://www.instagram.com/p/${ig_code}/?__a=1`;
+		// Tulis buffer ke file temporary
+		fs.writeFileSync(tempInput, inputBuffer);
 
-	request.get(url, (err, response, body) => {
-		if (err) {
-			res.json({ status: "error", details: "Error on getting response" });
+		// Jalankan ffmpeg untuk menghapus metadata
+		const ffmpeg = spawn('ffmpeg', [
+			'-i', tempInput,
+			'-map_metadata', '-1',
+			'-c:v', 'copy',
+			'-c:a', 'copy',
+			tempOutput
+		]);
 
-			res.end();
-		} else {
-			let json = JSON.parse(body);
+		let errorOutput = '';
 
-			if (json.hasOwnProperty("graphql")) {
-				const { shortcode_media } = json.graphql;
+		ffmpeg.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
 
-				const { __typename: postType } = shortcode_media;
+		ffmpeg.on('close', (code) => {
+			// Hapus file temporary input
+			fs.unlinkSync(tempInput);
 
-				if (
-					postType != "GraphImage" &&
-					postType != "GraphSidecar" &&
-					postType != "GraphVideo"
-				) {
-					res.json({ status: "error", details: "No Post Type Found" });
+			if (code === 0) {
+				// Baca file output
+				const outputBuffer = fs.readFileSync(tempOutput);
+				// Hapus file temporary output
+				fs.unlinkSync(tempOutput);
+				resolve(outputBuffer);
+			} else {
+				// Hapus file temporary output jika ada
+				if (fs.existsSync(tempOutput)) {
+					fs.unlinkSync(tempOutput);
+				}
+				reject(new Error(`ffmpeg process failed with code ${code}: ${errorOutput}`));
+			}
+		});
+	});
+}
+
+router.post("/instagram", async (req, res) => {
+	try {
+		const url_post = req.body.url;
+		console.log('Mencoba mengakses URL Instagram:', url_post);
+
+		// Jalankan yt-dlp sebagai proses terpisah
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			url_post
+		]);
+
+		let output = '';
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
 				} else {
-					const {
-						display_url: displayUrl,
-						edge_media_to_caption,
-					} = shortcode_media;
-
-					const { edges: captionCheck } = edge_media_to_caption;
-
-					const caption =
-						captionCheck.length == 1 ? captionCheck[0].node.text : "";
-
-					const {
-						username: owner,
-						is_verified,
-						profile_pic_url: profile_pic,
-						full_name,
-						is_private,
-						edge_owner_to_timeline_media,
-					} = shortcode_media.owner;
-
-					const total_media = edge_owner_to_timeline_media.count;
-					const hashtags = caption.match(/#\w+/g);
-
-					//GraphImage = single image post
-					if (postType === "GraphImage") {
-						const dataDownload = displayUrl;
-
-						res.json({
-							status: "success",
-							postType: "SingleImage",
-							displayUrl,
-							caption,
-							owner,
-							is_verified,
-							profile_pic,
-							full_name,
-							is_private,
-							total_media,
-							hashtags,
-							dataDownload,
-						});
-
-						res.end();
-						//GraphSidecar = multiple post
-					} else if (postType === "GraphSidecar") {
-						const dataDownload = [];
-
-						for (const post of shortcode_media.edge_sidecar_to_children
-							.edges) {
-							const { is_video, display_url, video_url } = post.node;
-
-							const placeholder_url = !is_video
-								? display_url
-								: video_url;
-
-							dataDownload.push({
-								is_video,
-								placeholder_url,
-							});
-						}
-
-						res.json({
-							status: "success",
-							postType: "MultiplePost",
-							displayUrl,
-							caption,
-							owner,
-							is_verified,
-							profile_pic,
-							full_name,
-							is_private,
-							total_media,
-							hashtags,
-							dataDownload,
-						});
-
-						res.end();
-						//GraphVideo = video post
-					} else if (postType === "GraphVideo") {
-						const dataDownload = shortcode_media.owner.videoUrl;
-
-						res.json({
-							status: "success",
-							postType: "SingleVideo",
-							displayUrl,
-							caption,
-							owner,
-							is_verified,
-							profile_pic,
-							full_name,
-							is_private,
-							total_media,
-							hashtags,
-							dataDownload,
-						});
-
-						res.end();
-					}
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
 				}
-			} else {
-				res.json({ status: "error", details: "URL Failed" });
+			});
+		});
 
-				res.end();
-			}
-		}
-	});
-});
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
 
-router.post("/youtube", (req, res) => {
-	const { url } = req.body;
+		const response = {
+			status: "success",
+			owner: videoInfo.uploader || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: url_post,
+			dataFormats: []
+		};
 
-	youtubeDl.getInfo(url, function (err, info) {
-		if (err) {
-			res.json({ status: "error", details: err });
-
-			res.end();
-		} else {
-			if (info.hasOwnProperty("uploader_url")) {
-				const {
-					uploader_url: ownerUrl,
-					uploader_id: ownerId,
-					channel_url: channelUrl,
-					uploader,
-					view_count: totalViews,
-					id: urlId,
-					thumbnail,
-					description,
-					_filename: filename,
-					duration,
-					fulltitle: title,
-					categories,
-					formats,
-				} = info;
-
-				const dataFormats = [];
-
-				for (const currentFormat of formats) {
-					const {
-						formatId,
-						url: dataDownload,
-						format,
-						ext,
-						formatText,
-						filesize,
-						acodec,
-					} = currentFormat;
-
-					if (acodec === "none") {
-						continue;
-					}
-
-					dataFormats.push({
-						dataDownload,
-						format,
-						ext,
-						filesize,
+		if (videoInfo.formats) {
+			videoInfo.formats.forEach(format => {
+				if (format.url) {
+					response.dataFormats.push({
+						dataDownload: format.url,
+						format: format.format || 'unknown',
+						ext: format.ext || 'mp4',
+						filesize: format.filesize || null
 					});
 				}
-
-				res.json({
-					status: "success",
-					ownerUrl,
-					ownerId,
-					channelUrl,
-					uploader,
-					totalViews,
-					urlId,
-					thumbnail,
-					description,
-					filename,
-					duration,
-					title,
-					categories,
-					dataFormats,
-				});
-
-				res.end();
-			} else {
-				res.json({
-					status: "error",
-					details: "Failed, Please check the URL!",
-				});
-
-				res.end();
-			}
+			});
 		}
-	});
+
+		console.log('Data berhasil diekstrak');
+		res.json(response);
+	} catch (error) {
+		console.error('Error saat mengambil data Instagram:', error);
+		res.json({ status: "error", details: error.message });
+	}
 });
 
-router.post("/youtube-playlist", (req, res) => {
-	const url = toSupportedFormat(req.body.url);
+router.post("/youtube", async (req, res) => {
+	try {
+		const { url } = req.body;
+		console.log('Mencoba mengakses URL YouTube:', url);
 
-	youtubeDl.getInfo(url, function (err, info) {
-		if (err) {
-			res.json({ status: "error", details: err });
+		// Konversi URL mobile ke format desktop
+		let processedUrl = url;
+		if (url.includes('youtu.be/')) {
+			const videoId = url.split('youtu.be/')[1].split('?')[0];
+			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+		} else if (url.includes('youtube.com/shorts/')) {
+			const videoId = url.split('shorts/')[1].split('?')[0];
+			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+		}
 
-			res.end();
-		} else {
-			let dataDownloads = [];
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--format-sort', 'res,ext:mp4:m4a',
+			'--merge-output-format', 'mp4',
+			processedUrl
+		]);
 
-			for (const playlist of info) {
-				const {
-					uploader_url: ownerUrl,
-					uploader_id: ownerId,
-					channel_url: channelUrl,
-					uploader,
-					view_count: totalViews,
-					id: urlId,
-					thumbnail,
-					description,
-					_filename: filename,
-					duration,
-					fulltitle: title,
-					categories,
-					formats,
-				} = playlist;
+		let output = '';
+		let errorOutput = '';
 
-				const dataFormats = [];
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+		});
 
-				for (const currentFormat of formats) {
-					const {
-						format_id: formatId,
-						url: dataDownload,
-						format_note: format,
-						ext,
-						format: formatText,
-						filesize,
-						acodec,
-					} = currentFormat;
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
 
-					if (acodec === "none") {
-						continue;
-					}
-
-					dataFormats.push({
-						dataDownload,
-						format,
-						ext,
-						filesize,
-					});
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
 				}
+			});
+		});
 
-				dataDownloads.push({
-					ownerUrl,
-					ownerId,
-					channelUrl,
-					uploader,
-					totalViews,
-					urlId,
-					thumbnail,
-					description,
-					filename,
-					duration,
-					title,
-					categories,
-					dataFormats,
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
+
+		const response = {
+			status: "success",
+			owner: videoInfo.uploader || '',
+			ownerUrl: videoInfo.uploader_url || '',
+			channelUrl: videoInfo.channel_url || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: processedUrl,
+			dataFormats: []
+		};
+
+		if (videoInfo.formats) {
+			// Filter dan urutkan format video
+			const validFormats = videoInfo.formats
+				.filter(format => format.url && format.ext === 'mp4')
+				.sort((a, b) => {
+					const aHeight = parseInt(a.height) || 0;
+					const bHeight = parseInt(b.height) || 0;
+					return bHeight - aHeight;
 				});
+
+			// Ambil format unik berdasarkan resolusi
+			const uniqueFormats = [];
+			const seenResolutions = new Set();
+
+			for (const format of validFormats) {
+				const resolution = `${format.width}x${format.height}`;
+				if (!seenResolutions.has(resolution) && format.height) {
+					seenResolutions.add(resolution);
+					uniqueFormats.push(format);
+				}
 			}
 
-			res.json({ status: "success", dataDownloads: dataDownloads });
-
-			res.end();
+			response.dataFormats = uniqueFormats.map(format => ({
+				dataDownload: format.url,
+				format: `${format.height}p`,
+				ext: format.ext || 'mp4',
+				filesize: format.filesize || null,
+				resolution: `${format.width}x${format.height}`,
+				width: format.width,
+				height: format.height,
+				fps: format.fps,
+				vcodec: format.vcodec,
+				acodec: format.acodec,
+				quality: format.quality || 'unknown'
+			}));
 		}
-	});
+
+		console.log('Data berhasil diekstrak');
+		res.json(response);
+	} catch (error) {
+		console.error('Error saat mengambil data YouTube:', error);
+		res.json({ status: "error", details: error.message });
+	}
+});
+
+router.post("/youtube-playlist", async (req, res) => {
+	try {
+		const url = toSupportedFormat(req.body.url);
+		const info = await ytDlp.getPlaylistInfo(url);
+		
+		const dataDownloads = info.map(video => ({
+			ownerUrl: video.uploader_url,
+			ownerId: video.uploader_id,
+			channelUrl: video.channel_url,
+			uploader: video.uploader,
+			totalViews: video.view_count,
+			urlId: video.id,
+			thumbnail: video.thumbnail,
+			description: video.description,
+			filename: video._filename,
+			duration: video.duration,
+			title: video.fulltitle,
+			categories: video.categories,
+			dataFormats: video.formats
+				.filter(format => format.acodec !== "none")
+				.map(format => ({
+					dataDownload: format.url,
+					format: format.format,
+					ext: format.ext,
+					filesize: format.filesize,
+				})),
+		}));
+
+		res.json({
+			status: "success",
+			dataDownloads,
+		});
+	} catch (error) {
+		res.json({ status: "error", details: error.message });
+	}
 });
 
 router.post("/tiktok", async (req, res) => {
-	const url = req.body.url;
-
 	try {
-		const data = await tiktokScraper.getVideoMeta(url);
+		const { url } = req.body;
+		console.log('Mencoba mengakses URL TikTok:', url);
 
-		if (data.hasOwnProperty("headers")) {
-			const { headers, collector } = data;
+		// Jalankan yt-dlp sebagai proses terpisah dengan opsi untuk mendapatkan video berkualitas terbaik
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--format', 'best[ext=mp4]',
+			'--add-header', 'Referer:https://www.tiktok.com/',
+			url
+		]);
 
-			const {
-				authorMeta,
-				text: description,
-				imageUrl: thumbnail,
-				videoUrl: urlDownload,
-				videoMeta,
-			} = collector[0];
+		let output = '';
+		let errorOutput = '';
 
-			const {
-				name: username,
-				nickName: name,
-				avatar: profilePic,
-			} = authorMeta;
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+		});
 
-			const { ratio: format } = videoMeta;
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
 
-			res.json({
-				status: "success",
-				headers,
-				username,
-				name,
-				profilePic,
-				description,
-				thumbnail,
-				format,
-				urlDownload,
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
 			});
+		});
 
-			res.end();
-		} else {
-			res.json({
-				status: "error",
-				details: "Failed, Please check the URL!",
-			});
+		const videoInfo = JSON.parse(output);
+		console.log('Data berhasil diekstrak');
 
-			res.end();
-		}
-	} catch (err) {
-		res.json({ status: "error", details: err });
+		// Filter format untuk mendapatkan video tanpa watermark
+		const formats = videoInfo.formats?.filter(format => 
+			format.ext === 'mp4' && 
+			format.protocol === 'https' &&
+			!format.format_note?.toLowerCase().includes('watermark')
+		) || [];
+
+		const response = {
+			status: 'success',
+			owner: videoInfo.uploader || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: videoInfo.webpage_url || '',
+			dataFormats: formats.map(format => ({
+				dataDownload: format.url || '',
+				format: format.format || '',
+				ext: format.ext || '',
+				filesize: format.filesize,
+				resolution: format.resolution,
+				width: format.width,
+				height: format.height,
+				quality: format.quality || 'unknown',
+				vcodec: format.vcodec,
+				acodec: format.acodec
+			})),
+			likeCount: videoInfo.like_count,
+			commentCount: videoInfo.comment_count,
+			comments: videoInfo.comments?.map(comment => ({
+				author: comment.author,
+				authorId: comment.author_id,
+				id: comment.id,
+				text: comment.text,
+				timestamp: comment.timestamp,
+			}))
+		};
+
+		res.json(response);
+	} catch (error) {
+		console.error('Error:', error);
+		res.status(500).json({
+			status: 'error',
+			message: error.message
+		});
 	}
 });
 
 router.post("/facebook", async (req, res) => {
-	const { url } = req.body;
+	try {
+		const url_post = req.body.url;
+		console.log('Mencoba mengakses URL Facebook:', url_post);
 
-	youtubeDl.getInfo(url, (err, info) => {
-		if (err) {
-			res.json({ status: "error", details: err });
+		// Jalankan yt-dlp sebagai proses terpisah
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			url_post
+		]);
 
-			res.end();
-		} else {
-			const { _filename: filename, thumbnails, fulltitle: title } = info;
+		let output = '';
+		let errorOutput = '';
 
-			const thumbnail = thumbnails[0].url;
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+		});
 
-			const dataDownloads = [];
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
 
-			for (const currentFormat of info.formats) {
-				const {
-					format_note: formatNote,
-					ext: extension,
-					url: urlDownload,
-				} = currentFormat;
-
-				dataDownloads.push({
-					formatNote,
-					extension,
-					urlDownload,
-				});
-			}
-
-			res.json({
-				status: "success",
-				title,
-				thumbnail,
-				filename,
-				dataDownloads,
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
 			});
+		});
 
-			res.end();
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
+
+		const response = {
+			status: "success",
+			owner: videoInfo.uploader || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: url_post,
+			dataFormats: []
+		};
+
+		if (videoInfo.formats) {
+			videoInfo.formats.forEach(format => {
+				if (format.url) {
+					response.dataFormats.push({
+						dataDownload: format.url,
+						format: format.format || 'unknown',
+						ext: format.ext || 'mp4',
+						filesize: format.filesize || null,
+						resolution: format.resolution || null,
+						width: format.width || null,
+						height: format.height || null
+					});
+				}
+			});
 		}
-	});
+
+		console.log('Data berhasil diekstrak');
+		res.json(response);
+	} catch (error) {
+		console.error('Error saat mengambil data Facebook:', error);
+		res.json({ status: "error", details: error.message });
+	}
 });
 
 router.post("/dailymotion", (req, res) => {
 	const { url } = req.body;
 
-	youtubeDl.getInfo(url, (err, info) => {
+	ytDlp.getInfo(url, (err, info) => {
 		if (err) {
 			res.json({
 				status: "error",
@@ -445,6 +491,424 @@ router.post("/dailymotion", (req, res) => {
 			}
 		}
 	});
+});
+
+// Endpoint untuk mengunduh video YouTube
+router.post("/youtube/download", async (req, res) => {
+	try {
+		const { url, removeMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video YouTube:', url);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (removeMetadata) {
+			try {
+				buffer = await removeMetadata(buffer);
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video YouTube:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mengunduh video TikTok
+router.post("/tiktok/download", async (req, res) => {
+	try {
+		const { url, removeMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video TikTok:', url);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.tiktok.com/',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (removeMetadata) {
+			try {
+				buffer = await removeMetadata(buffer);
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video TikTok:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mengunduh video Facebook
+router.post("/facebook/download", async (req, res) => {
+	try {
+		const { url, removeMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video Facebook:', url);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (removeMetadata) {
+			try {
+				buffer = await removeMetadata(buffer);
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video Facebook:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mendeteksi platform
+router.post("/detect-platform", async (req, res) => {
+	try {
+		const { url } = req.body;
+		console.log('Mendeteksi platform untuk URL:', url);
+
+		let platform = '';
+		let endpoint = '';
+
+		// Deteksi platform berdasarkan URL
+		if (url.includes('facebook.com') || url.includes('fb.watch')) {
+			platform = 'facebook';
+			endpoint = '/api/facebook';
+		} else if (url.includes('tiktok.com') || url.includes('vt.tiktok.com')) {
+			platform = 'tiktok';
+			endpoint = '/api/tiktok';
+		} else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+			platform = 'youtube';
+			endpoint = '/api/youtube';
+		} else if (url.includes('instagram.com')) {
+			platform = 'instagram';
+			endpoint = '/api/instagram';
+		} else {
+			throw new Error('Platform tidak didukung');
+		}
+
+		// Panggil endpoint yang sesuai
+		const response = await fetch(`http://localhost:3000${endpoint}`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ url })
+		});
+
+		const data = await response.json();
+
+		if (data.status === 'success') {
+			// Tambahkan informasi platform ke response
+			data.platform = platform;
+			res.json(data);
+		} else {
+			throw new Error(data.message || 'Gagal mengambil informasi video');
+		}
+	} catch (error) {
+		console.error('Error saat mendeteksi platform:', error);
+		res.json({ 
+			status: "error", 
+			message: error.message 
+		});
+	}
+});
+
+// Endpoint untuk mengunduh video Instagram
+router.post("/instagram/download", async (req, res) => {
+	try {
+		const { url, removeMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video Instagram:', url);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.instagram.com/',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (removeMetadata) {
+			try {
+				buffer = await removeMetadata(buffer);
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video Instagram:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
 });
 
 module.exports = router;
