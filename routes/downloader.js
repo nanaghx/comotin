@@ -76,6 +76,8 @@ async function removeAudio(inputBuffer) {
 		// Tulis buffer ke file temporary
 		fs.writeFileSync(tempInput, inputBuffer);
 
+		console.log('Memulai proses penghapusan audio dengan ffmpeg...');
+
 		// Jalankan ffmpeg untuk menghapus audio
 		const ffmpeg = spawn('ffmpeg', [
 			'-i', tempInput,
@@ -91,22 +93,39 @@ async function removeAudio(inputBuffer) {
 
 		ffmpeg.stderr.on('data', (data) => {
 			errorOutput += data.toString();
+			console.log('ffmpeg output:', data.toString());
 		});
 
 		ffmpeg.on('close', (code) => {
+			console.log('ffmpeg process closed with code:', code);
+			
 			// Hapus file temporary input
-			fs.unlinkSync(tempInput);
+			try {
+				fs.unlinkSync(tempInput);
+			} catch (error) {
+				console.error('Error deleting input file:', error);
+			}
 
 			if (code === 0) {
-				// Baca file output
-				const outputBuffer = fs.readFileSync(tempOutput);
-				// Hapus file temporary output
-				fs.unlinkSync(tempOutput);
-				resolve(outputBuffer);
+				try {
+					// Baca file output
+					const outputBuffer = fs.readFileSync(tempOutput);
+					// Hapus file temporary output
+					fs.unlinkSync(tempOutput);
+					console.log('Audio berhasil dihapus dan file output dibuat');
+					resolve(outputBuffer);
+				} catch (error) {
+					console.error('Error reading output file:', error);
+					reject(error);
+				}
 			} else {
 				// Hapus file temporary output jika ada
 				if (fs.existsSync(tempOutput)) {
-					fs.unlinkSync(tempOutput);
+					try {
+						fs.unlinkSync(tempOutput);
+					} catch (error) {
+						console.error('Error deleting output file:', error);
+					}
 				}
 				reject(new Error(`ffmpeg process failed with code ${code}: ${errorOutput}`));
 			}
@@ -870,8 +889,10 @@ router.post("/detect-platform", async (req, res) => {
 // Endpoint untuk mengunduh video Instagram
 router.post("/instagram/download", async (req, res) => {
 	try {
-		const { url, removeMetadata = true } = req.body;
+		const { url, mute = false, removeMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Instagram:', url);
+		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', removeMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -928,11 +949,24 @@ router.post("/instagram/download", async (req, res) => {
 
 		// Hapus metadata dari video jika opsi diaktifkan
 		if (removeMetadata) {
+			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
 			} catch (error) {
 				console.error('Error saat menghapus metadata:', error);
-				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
 			}
 		}
 
@@ -961,9 +995,10 @@ router.post("/instagram/download", async (req, res) => {
 
 router.post("/:platform/download", async (req, res) => {
 	try {
-		const { url, format, mute, removeMetadata } = req.body;
+		const { url, mute = false, removeMetadata = true, format = 'video' } = req.body;
 		const platform = req.params.platform;
 		console.log(`Mencoba mengunduh dari ${platform}:`, url);
+		console.log('Status mute:', mute);
 
 		// Konversi URL mobile ke format desktop untuk YouTube
 		let processedUrl = url;
@@ -1019,14 +1054,21 @@ router.post("/:platform/download", async (req, res) => {
 
 		// Hapus metadata jika diminta
 		if (removeMetadata) {
+			console.log('Menghapus metadata...');
 			buffer = await removeMetadata(buffer);
+			console.log('Metadata berhasil dihapus');
 		}
 
 		// Hapus audio jika diminta
 		if (mute) {
 			console.log('Menghapus audio dari video...');
-			buffer = await removeAudio(buffer);
-			console.log('Audio berhasil dihapus');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
+			}
 		}
 
 		// Set header response

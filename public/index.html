@@ -162,7 +162,7 @@
 
         <!-- Metadata option -->
         <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="removeMetadata" checked>
+            <input class="form-check-input" type="checkbox" id="removeMetadata">
             <label class="form-check-label" for="removeMetadata">
                 Hapus metadata video
             </label>
@@ -310,6 +310,7 @@
                 const data = await response.json();
 
                 if (data.status === 'success') {
+                    console.log('Status mute:', isMuteActive);
                     // Download video
                     const downloadResponse = await fetch(`/api/${data.platform}/download`, {
                         method: 'POST',
@@ -319,7 +320,8 @@
                         body: JSON.stringify({ 
                             url,
                             mute: isMuteActive,
-                            removeMetadata
+                            removeMetadata,
+                            format: 'video'
                         })
                     });
 
