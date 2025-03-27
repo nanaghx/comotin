@@ -907,6 +907,15 @@ router.post("/detect-platform", async (req, res) => {
 		} else if (url.includes('instagram.com')) {
 			platform = 'instagram';
 			endpoint = '/api/instagram';
+		} else if (url.includes('twitter.com') || url.includes('x.com')) {
+			platform = 'twitter';
+			endpoint = '/api/twitter';
+		} else if (url.includes('twitch.tv')) {
+			platform = 'twitch';
+			endpoint = '/api/twitch';
+		} else if (url.includes('dailymotion.com')) {
+			platform = 'dailymotion';
+			endpoint = '/api/dailymotion';
 		} else {
 			throw new Error('Platform tidak didukung');
 		}
@@ -1132,6 +1141,306 @@ router.post("/:platform/download", async (req, res) => {
 	} catch (error) {
 		console.error('Error saat mengunduh:', error);
 		res.status(500).json({ status: "error", details: error.message });
+	}
+});
+
+// Endpoint untuk mengunduh video Twitter
+router.post("/twitter", async (req, res) => {
+	try {
+		const { url } = req.body;
+		console.log('Mencoba mengakses URL Twitter:', url);
+
+		// Konversi URL x.com ke twitter.com jika diperlukan
+		let processedUrl = url;
+		if (url.includes('x.com')) {
+			processedUrl = url.replace('x.com', 'twitter.com');
+		}
+		console.log('URL yang diproses:', processedUrl);
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://twitter.com/',
+			'--add-header', 'Cookie:auth_token=YOUR_AUTH_TOKEN',  // Tambahkan auth token jika diperlukan
+			'--add-header', 'Authorization:Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',  // Twitter API Bearer Token
+			processedUrl
+		]);
+
+		let output = '';
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+			console.log('yt-dlp stdout:', data.toString());
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error('yt-dlp stderr:', data.toString());
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				console.log('yt-dlp process closed with code:', code);
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
+
+		const response = {
+			status: "success",
+			owner: videoInfo.uploader || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: processedUrl,
+			dataFormats: []
+		};
+
+		if (videoInfo.formats) {
+			videoInfo.formats.forEach(format => {
+				if (format.url) {
+					response.dataFormats.push({
+						dataDownload: format.url,
+						format: format.format || 'unknown',
+						ext: format.ext || 'mp4',
+						filesize: format.filesize || null,
+						resolution: format.resolution || null,
+						width: format.width || null,
+						height: format.height || null
+					});
+				}
+			});
+		}
+
+		console.log('Data berhasil diekstrak');
+		res.json(response);
+	} catch (error) {
+		console.error('Error saat mengambil data Twitter:', error);
+		res.json({ status: "error", details: error.message });
+	}
+});
+
+// Endpoint untuk mengunduh video Twitch
+router.post("/twitch/download", async (req, res) => {
+	try {
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video Twitch:', url);
+		console.log('Status mute:', mute);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.twitch.tv/',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (shouldRemoveMetadata) {
+			console.log('Menghapus metadata...');
+			try {
+				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video Twitch:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mengunduh video Dailymotion
+router.post("/dailymotion/download", async (req, res) => {
+	try {
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
+		console.log('Mencoba mengunduh video Dailymotion:', url);
+		console.log('Status mute:', mute);
+
+		// Set header untuk download
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', 'attachment');
+
+		// Buat buffer untuk menyimpan data
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		// Jalankan yt-dlp dengan opsi yang lebih baik
+		const process = spawn('yt-dlp', [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.dailymotion.com/',
+			url
+		]);
+
+		// Kumpulkan data dari stdout
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		// Tunggu proses selesai
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		// Hapus metadata dari video jika opsi diaktifkan
+		if (shouldRemoveMetadata) {
+			console.log('Menghapus metadata...');
+			try {
+				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus metadata:', error);
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
+			}
+		}
+
+		// Kirim data ke client
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data video yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh video Dailymotion:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
 	}
 });
 
