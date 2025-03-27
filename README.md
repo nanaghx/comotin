@@ -1,166 +1,237 @@
-# Social Media Downloader API
+# 📥 Social Media Downloader API
 
-API untuk mengunduh video dari berbagai platform media sosial seperti YouTube, TikTok, Facebook, dan Instagram.
+API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung YouTube, TikTok, Facebook, dan Instagram dengan berbagai pilihan kualitas video.
 
-## Fitur
+## ✨ Fitur Utama
 
-- Download video dari YouTube, TikTok, Facebook, dan Instagram
-- Mendukung berbagai format video
-- Opsi penghapusan metadata video
-- Mendukung playlist YouTube
-- Mendeteksi platform secara otomatis
-- Mendukung video berkualitas tinggi
+- 🎥 Download video dari multiple platform:
+  - YouTube (video & playlist)
+  - TikTok 
+  - Facebook
+  - Instagram
+- 🔍 Deteksi platform otomatis
+- 📊 Multiple format & kualitas video
+- 🗑️ Opsi penghapusan metadata
+- 💾 Download tanpa watermark (untuk TikTok)
+- 📝 Informasi lengkap video (judul, deskripsi, dll)
 
-## Persyaratan
+## 🛠️ Prasyarat
 
-- Node.js (v14 atau lebih tinggi)
+- Node.js (v14+)
 - FFmpeg
 - yt-dlp
 
-## Instalasi
+## ⚙️ Instalasi
 
-1. Clone repository ini
+1. **Clone Repository**
 ```bash
-git clone https://github.com/username/Social-Media-Downloader.git
-cd Social-Media-Downloader
+git clone https://github.com/masalfi/API-Social-Media-Downloader.git
+cd API-Social-Media-Downloader
 ```
 
-2. Install dependencies
+2. **Install Dependencies**
 ```bash
 npm install
 ```
 
-3. Install FFmpeg (jika belum terinstall)
+3. **Install FFmpeg**
 ```bash
-# Untuk macOS menggunakan Homebrew
+# macOS
 brew install ffmpeg
 
-# Untuk Ubuntu/Debian
+# Ubuntu/Debian
 sudo apt-get install ffmpeg
 
-# Untuk Windows
+# Windows
 # Download dari https://ffmpeg.org/download.html
 ```
 
-4. Install yt-dlp (jika belum terinstall)
+4. **Install yt-dlp**
 ```bash
-# Untuk macOS menggunakan Homebrew
+# macOS
 brew install yt-dlp
 
-# Untuk Ubuntu/Debian
+# Ubuntu/Debian
 sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 sudo chmod a+rx /usr/local/bin/yt-dlp
 
-# Untuk Windows
-# Download dari https://github.com/yt-dlp/yt-dlp/releases/latest
+# Windows
+# Download dari https://github.com/yt-dlp/yt-dlp/releases
 ```
 
-5. Jalankan API
+5. **Jalankan Server**
 ```bash
 node app.js
 ```
 
-API akan berjalan di `http://localhost:3000`
+Server akan berjalan di `http://localhost:3000`
 
-## Penggunaan API
+## 📚 Dokumentasi API
 
 ### 1. Deteksi Platform
-```http
-POST /api/detect-platform
-Content-Type: application/json
+Mendeteksi platform dari URL video yang diberikan.
 
+**Endpoint:** `POST /api/detect-platform`
+
+**Request Body:**
+```json
 {
     "url": "URL_VIDEO"
 }
 ```
 
-### 2. Download Video YouTube
-```http
-POST /api/youtube/download
-Content-Type: application/json
-
-{
-    "url": "URL_YOUTUBE",
-    "removeMetadata": true
-}
-```
-
-### 3. Download Video TikTok
-```http
-POST /api/tiktok/download
-Content-Type: application/json
-
-{
-    "url": "URL_TIKTOK",
-    "removeMetadata": true
-}
-```
-
-### 4. Download Video Facebook
-```http
-POST /api/facebook/download
-Content-Type: application/json
-
-{
-    "url": "URL_FACEBOOK",
-    "removeMetadata": true
-}
-```
-
-### 5. Download Video Instagram
-```http
-POST /api/instagram/download
-Content-Type: application/json
-
-{
-    "url": "URL_INSTAGRAM",
-    "removeMetadata": true
-}
-```
-
-### 6. Download Playlist YouTube
-```http
-POST /api/youtube-playlist
-Content-Type: application/json
-
-{
-    "url": "URL_PLAYLIST_YOUTUBE"
-}
-```
-
-## Parameter
-
-- `url`: URL video yang ingin diunduh (wajib)
-- `removeMetadata`: Boolean untuk menghapus metadata video (opsional, default: true)
-
-## Response
-
-### Sukses
+**Response Success:**
 ```json
 {
     "status": "success",
+    "platform": "youtube",
     "data": {
-        // Data video
+        "title": "Judul Video",
+        "duration": "300",
+        "thumbnail": "URL_THUMBNAIL",
+        "description": "Deskripsi Video",
+        // ... data lainnya
     }
 }
 ```
 
-### Error
+### 2. Download Video YouTube
+Download video dari YouTube dengan berbagai opsi kualitas.
+
+**Endpoint:** `POST /api/youtube/download`
+
+**Request Body:**
 ```json
 {
-    "status": "error",
-    "message": "Pesan error"
+    "url": "URL_YOUTUBE",
+    "removeMetadata": true  // opsional, default: true
 }
 ```
 
-## Catatan
+**Response Success:**
+```json
+{
+    "status": "success",
+    "data": {
+        "title": "Judul Video",
+        "owner": "Nama Channel",
+        "duration": "300",
+        "dataFormats": [
+            {
+                "format": "720p",
+                "filesize": "10000000",
+                "url": "URL_DOWNLOAD"
+            }
+            // ... format lainnya
+        ]
+    }
+}
+```
 
-1. Pastikan URL video valid dan dapat diakses
-2. Proses download mungkin memerlukan waktu yang lebih lama jika opsi penghapusan metadata diaktifkan
-3. Beberapa video mungkin tidak dapat diunduh karena pembatasan dari platform
-4. Gunakan API dengan bijak dan sesuai dengan kebijakan platform
+### 3. Download Video TikTok
+Download video TikTok tanpa watermark.
 
-## Lisensi
+**Endpoint:** `POST /api/tiktok/download`
 
-MIT License
+**Request Body:**
+```json
+{
+    "url": "URL_TIKTOK",
+    "removeMetadata": true  // opsional, default: true
+}
+```
+
+### 4. Download Video Facebook
+Download video dari Facebook dengan kualitas terbaik.
+
+**Endpoint:** `POST /api/facebook/download`
+
+**Request Body:**
+```json
+{
+    "url": "URL_FACEBOOK",
+    "removeMetadata": true  // opsional, default: true
+}
+```
+
+### 5. Download Video Instagram
+Download video dari Instagram (post/reels).
+
+**Endpoint:** `POST /api/instagram/download`
+
+**Request Body:**
+```json
+{
+    "url": "URL_INSTAGRAM",
+    "removeMetadata": true  // opsional, default: true
+}
+```
+
+### 6. Download Playlist YouTube
+Download seluruh video dalam playlist YouTube.
+
+**Endpoint:** `POST /api/youtube-playlist`
+
+**Request Body:**
+```json
+{
+    "url": "URL_PLAYLIST"
+}
+```
+
+## 🔍 Format Response
+
+### Success Response
+```json
+{
+    "status": "success",
+    "data": {
+        // Data spesifik untuk setiap platform
+    }
+}
+```
+
+### Error Response
+```json
+{
+    "status": "error",
+    "message": "Pesan error spesifik"
+}
+```
+
+## ⚠️ Catatan Penting
+
+1. **Rate Limiting:**
+   - Harap gunakan API dengan bijak
+   - Hindari request berlebihan dalam waktu singkat
+
+2. **Video Metadata:**
+   - Opsi `removeMetadata` akan memperlambat proses download
+   - Metadata yang dihapus tidak dapat dikembalikan
+
+3. **Kompatibilitas:**
+   - Pastikan URL video dapat diakses publik
+   - Beberapa video mungkin dilindungi atau dibatasi
+
+4. **Kualitas Video:**
+   - Kualitas maksimum tergantung pada video sumber
+   - Format yang tersedia bervariasi antar platform
+
+## 🤝 Kontribusi
+
+Kontribusi selalu diterima! Silakan buat pull request atau laporkan issues.
+
+## 📄 Lisensi
+
+Project ini dilisensikan di bawah [MIT License](LICENSE).
+
+## 👨‍💻 Author
+
+- [Alfi Firdaus](https://github.com/masalfi)
+
+## 🙏 Acknowledgments
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [FFmpeg](https://ffmpeg.org/)
+- [Node.js](https://nodejs.org/)
 
