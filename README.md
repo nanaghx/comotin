@@ -118,14 +118,14 @@ Download video dari Instagram (post/reels).
 {
     "url": "https://www.instagram.com/p/example",
     "mute": false,
-    "removeMetadata": true
+    "shouldRemoveMetadata": true
 }
 ```
 
 **Parameter:**
 - `url`: URL video Instagram (wajib)
 - `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
 
 ### 3. Download Video YouTube
 Download video dari YouTube dengan berbagai opsi kualitas.
@@ -137,14 +137,14 @@ Download video dari YouTube dengan berbagai opsi kualitas.
 {
     "url": "https://www.youtube.com/watch?v=example",
     "mute": false,
-    "removeMetadata": true
+    "shouldRemoveMetadata": true
 }
 ```
 
 **Parameter:**
 - `url`: URL video YouTube (wajib)
 - `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
 
 ### 4. Download Video TikTok
 Download video TikTok tanpa watermark.
@@ -156,14 +156,14 @@ Download video TikTok tanpa watermark.
 {
     "url": "https://www.tiktok.com/@username/video/example",
     "mute": false,
-    "removeMetadata": true
+    "shouldRemoveMetadata": true
 }
 ```
 
 **Parameter:**
 - `url`: URL video TikTok (wajib)
 - `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
 
 ### 5. Download Video Facebook
 Download video dari Facebook dengan kualitas terbaik.
@@ -175,14 +175,14 @@ Download video dari Facebook dengan kualitas terbaik.
 {
     "url": "https://www.facebook.com/watch?v=example",
     "mute": false,
-    "removeMetadata": true
+    "shouldRemoveMetadata": true
 }
 ```
 
 **Parameter:**
 - `url`: URL video Facebook (wajib)
 - `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `removeMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
 
 ### 6. Download Playlist YouTube
 Download seluruh video dalam playlist YouTube.
