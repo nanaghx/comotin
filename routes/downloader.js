@@ -533,53 +533,60 @@ router.post("/facebook", async (req, res) => {
 	}
 });
 
-router.post("/dailymotion", (req, res) => {
-	const { url } = req.body;
+router.post("/dailymotion", async (req, res) => {
+	try {
+		const url = req.body.url;
+		console.log('Mencoba mengakses URL Dailymotion:', url);
 
-	ytDlp.getInfo(url, (err, info) => {
-		if (err) {
-			res.json({
-				status: "error",
-				details: err,
+		// Jalankan yt-dlp sebagai proses terpisah
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			url
+		]);
+
+		let output = '';
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			output += data.toString();
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
 			});
+		});
 
-			res.end();
-		} else {
-			if (info.hasOwnProperty("_filename")) {
-				const {
-					_filename: filename,
-					ext: extension,
-					height: format,
-					description,
-					uploader,
-					fulltitle: title,
-					url: urlDownload,
-					thumbnail,
-				} = info;
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
 
-				res.json({
-					status: "success",
-					filename,
-					extension,
-					format,
-					description,
-					uploader,
-					title,
-					thumbnail,
-					urlDownload,
-				});
+		const response = {
+			status: "success",
+			title: videoInfo.title || '',
+			thumbnail: videoInfo.thumbnail || '',
+			description: videoInfo.description || '',
+			duration: videoInfo.duration || 0,
+			formats: videoInfo.formats || []
+		};
 
-				res.end();
-			} else {
-				res.json({
-					status: "error",
-					details: "Failed, Please check the URL!",
-				});
-
-				res.end();
-			}
-		}
-	});
+		res.json(response);
+	} catch (error) {
+		console.error('Error:', error);
+		res.status(500).json({
+			status: "error",
+			message: error.message
+		});
+	}
 });
 
 // Endpoint untuk mengunduh video YouTube
@@ -691,8 +698,10 @@ router.post("/youtube/download", async (req, res) => {
 // Endpoint untuk mengunduh video TikTok
 router.post("/tiktok/download", async (req, res) => {
 	try {
-		const { url, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengunduh video TikTok:', url);
+		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
+		console.log('Mencoba mengakses URL TikTok:', url);
+		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -749,11 +758,25 @@ router.post("/tiktok/download", async (req, res) => {
 
 		// Hapus metadata dari video jika opsi diaktifkan
 		if (shouldRemoveMetadata) {
+			console.log('Menghapus metadata...');
 			try {
 				buffer = await removeMetadata(buffer);
+				console.log('Metadata berhasil dihapus');
 			} catch (error) {
 				console.error('Error saat menghapus metadata:', error);
 				// Lanjutkan tanpa menghapus metadata jika terjadi error
+			}
+		}
+
+		// Hapus audio jika diminta
+		if (mute) {
+			console.log('Menghapus audio dari video...');
+			try {
+				buffer = await removeAudio(buffer);
+				console.log('Audio berhasil dihapus');
+			} catch (error) {
+				console.error('Error saat menghapus audio:', error);
+				throw error;
 			}
 		}
 
@@ -786,6 +809,7 @@ router.post("/facebook/download", async (req, res) => {
 		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Facebook:', url);
 		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -913,7 +937,7 @@ router.post("/detect-platform", async (req, res) => {
 		} else if (url.includes('twitch.tv')) {
 			platform = 'twitch';
 			endpoint = '/api/twitch';
-		} else if (url.includes('dailymotion.com')) {
+		} else if (url.includes('dailymotion.com') || url.includes('dai.ly')) {
 			platform = 'dailymotion';
 			endpoint = '/api/dailymotion';
 		} else {
@@ -950,54 +974,30 @@ router.post("/detect-platform", async (req, res) => {
 // Endpoint untuk mengunduh video Instagram
 router.post("/instagram/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengunduh video Instagram:', url);
+		const { url, mute, shouldRemoveMetadata } = req.body;
+		console.log('Mencoba mengakses URL Instagram:', url);
 		console.log('Status mute:', mute);
-		console.log('Status shouldRemoveMetadata:', shouldRemoveMetadata);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
-
-		// Buat buffer untuk menyimpan data
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
-
-		// Jalankan yt-dlp dengan opsi yang lebih baik
+		// Jalankan yt-dlp sebagai proses terpisah
 		const process = spawn('yt-dlp', [
-			'--format', 'best[ext=mp4]',
-			'--output', '-',
+			'--dump-json',
 			'--no-check-certificates',
 			'--no-warnings',
-			'--no-playlist',
-			'--no-part',
-			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
-			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-			'--add-header', 'Referer:https://www.instagram.com/',
 			url
 		]);
 
-		// Kumpulkan data dari stdout
+		let output = '';
+		let errorOutput = '';
+
 		process.stdout.on('data', (data) => {
-			buffer = Buffer.concat([buffer, data]);
+			output += data.toString();
 		});
 
 		process.stderr.on('data', (data) => {
 			errorOutput += data.toString();
-			console.error(`yt-dlp error: ${data}`);
 		});
 
-		process.on('error', (error) => {
-			console.error('Process error:', error);
-			if (!res.headersSent) {
-				res.status(500).json({ 
-					status: "error", 
-					message: `Error saat menjalankan yt-dlp: ${error.message}` 
-				});
-			}
-		});
-
-		// Tunggu proses selesai
 		await new Promise((resolve, reject) => {
 			process.on('close', (code) => {
 				if (code === 0) {
@@ -1008,49 +1008,57 @@ router.post("/instagram/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
-				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
-			}
-		}
+		const videoInfo = JSON.parse(output);
+		console.log('Video info:', videoInfo);
+
+		// Download video
+		const downloadProcess = spawn('yt-dlp', [
+			'--no-check-certificates',
+			'--no-warnings',
+			'--format', 'best',
+			'--output', '-',
+			url
+		]);
+
+		let videoBuffer = Buffer.alloc(0);
+		downloadProcess.stdout.on('data', (chunk) => {
+			videoBuffer = Buffer.concat([videoBuffer, chunk]);
+		});
+
+		await new Promise((resolve, reject) => {
+			downloadProcess.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error('Gagal mengunduh video'));
+				}
+			});
+		});
+
+		let finalBuffer = videoBuffer;
 
 		// Hapus audio jika diminta
 		if (mute) {
 			console.log('Menghapus audio dari video...');
-			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
-				throw error;
-			}
+			finalBuffer = await removeAudio(finalBuffer);
 		}
 
-		// Kirim data ke client
-		if (buffer.length > 0) {
-			res.setHeader('Content-Length', buffer.length);
-			res.send(buffer);
-		} else {
-			throw new Error('Tidak ada data video yang diterima');
+		// Hapus metadata jika diminta
+		if (shouldRemoveMetadata) {
+			console.log('Menghapus metadata dari video...');
+			finalBuffer = await removeMetadata(finalBuffer);
 		}
 
-		// Handle client disconnect
-		req.on('close', () => {
-			process.kill();
-		});
+		// Set header response
+		res.setHeader('Content-Type', 'video/mp4');
+		res.setHeader('Content-Disposition', `attachment; filename="video_instagram${mute ? '_mute' : ''}.mp4"`);
+		res.send(finalBuffer);
 	} catch (error) {
-		console.error('Error saat mengunduh video Instagram:', error);
-		if (!res.headersSent) {
-			res.status(500).json({ 
-				status: "error", 
-				message: error.message 
-			});
-		}
+		console.error('Error:', error);
+		res.status(500).json({
+			status: "error",
+			message: error.message
+		});
 	}
 });
 
@@ -1060,6 +1068,7 @@ router.post("/:platform/download", async (req, res) => {
 		const platform = req.params.platform;
 		console.log(`Mencoba mengunduh dari ${platform}:`, url);
 		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
 		// Konversi URL mobile ke format desktop untuk YouTube
 		let processedUrl = url;
@@ -1238,6 +1247,7 @@ router.post("/twitch/download", async (req, res) => {
 		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Twitch:', url);
 		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
@@ -1344,6 +1354,7 @@ router.post("/dailymotion/download", async (req, res) => {
 		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
 		console.log('Mencoba mengunduh video Dailymotion:', url);
 		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
 
 		// Set header untuk download
 		res.setHeader('Content-Type', 'video/mp4');
