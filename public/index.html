@@ -207,6 +207,37 @@
         });
 
         let isMuteActive = false;
+        let removeMetadata = true;
+
+        // Fungsi untuk menyimpan pengaturan ke local storage
+        function saveSettings() {
+            localStorage.setItem('isMuteActive', isMuteActive);
+            localStorage.setItem('removeMetadata', document.getElementById('removeMetadata').checked);
+        }
+
+        // Fungsi untuk mengambil pengaturan dari local storage
+        function loadSettings() {
+            // Ambil status mute
+            isMuteActive = localStorage.getItem('isMuteActive') === 'true';
+            const muteBtn = document.getElementById('muteBtn');
+            if (isMuteActive) {
+                muteBtn.classList.add('btn-mute-active');
+                muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> mute (aktif)';
+            } else {
+                muteBtn.classList.remove('btn-mute-active');
+                muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> mute';
+            }
+
+            // Ambil status remove metadata
+            const removeMetadataValue = localStorage.getItem('removeMetadata');
+            if (removeMetadataValue !== null) {
+                document.getElementById('removeMetadata').checked = removeMetadataValue === 'true';
+            }
+        }
+
+        // Load pengaturan saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', loadSettings);
+
         document.getElementById('muteBtn').addEventListener('click', () => {
             const muteBtn = document.getElementById('muteBtn');
             isMuteActive = !isMuteActive;
@@ -219,7 +250,13 @@
                 muteBtn.classList.remove('btn-mute-active');
                 muteBtn.innerHTML = '<i class="fas fa-volume-mute"></i> mute';
             }
+
+            // Simpan pengaturan
+            saveSettings();
         });
+
+        // Event listener untuk checkbox remove metadata
+        document.getElementById('removeMetadata').addEventListener('change', saveSettings);
 
         // Event listeners untuk tombol
         document.getElementById('autoBtn').addEventListener('click', downloadVideo);
