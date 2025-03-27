@@ -15,7 +15,7 @@ API untuk mengunduh video dari berbagai platform media sosial populer. Mendukung
 - 💾 Download tanpa watermark (untuk TikTok)
 - 📝 Informasi lengkap video (judul, deskripsi, dll)
 - 🔒 Keamanan:
-  - CORS Protection
+  - Public API Access
   - Rate Limiting
   - Request Validation
 
@@ -205,10 +205,10 @@ Download seluruh video dalam playlist YouTube.
 
 ## 🔐 Keamanan & Batasan API
 
-1. **CORS (Cross-Origin Resource Sharing):**
-   - API ini dilindungi oleh CORS
-   - Hanya domain yang diizinkan yang dapat mengakses API
-   - Untuk mengakses dari domain lain, hubungi administrator
+1. **Akses API:**
+   - API dapat diakses dari domain manapun
+   - Tidak ada pembatasan CORS
+   - Cocok untuk penggunaan publik
 
 2. **Rate Limiting:**
    - Maksimal 100 request per IP dalam 15 menit
@@ -226,8 +226,8 @@ Download seluruh video dalam playlist YouTube.
    - Gunakan format video yang sesuai kebutuhan
 
 5. **Penggunaan API:**
-   - API ini untuk penggunaan personal/development
-   - Untuk penggunaan komersial, hubungi administrator
+   - API ini untuk penggunaan publik
+   - Harap gunakan dengan bijak
    - Hindari penggunaan yang berlebihan
 
 ## 🤝 Kontribusi
