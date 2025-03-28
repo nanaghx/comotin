@@ -25,24 +25,29 @@ apt update && apt upgrade -y
 echo "📦 Menginstall dependencies sistem..."
 apt install -y ffmpeg chromium-browser certbot python3-certbot-nginx curl gnupg
 
-# 3. Install yt-dlp
-echo "📦 Menginstall yt-dlp..."
-curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-chmod a+rx /usr/local/bin/yt-dlp
-
-# 4. Install Node.js 18.x
-echo "📦 Menginstall Node.js..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# 3. Install Node.js dan NPM
+echo "📦 Menginstall Node.js dan NPM..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt install -y nodejs
+npm install -g npm@latest
 
-# 5. Install PM2 secara global
+# 4. Install PM2 secara global
 echo "📦 Menginstall PM2..."
 npm install -g pm2
-export PATH=$PATH:/usr/local/bin
+export PATH=$PATH:/usr/local/bin:/usr/bin:/root/.npm-global/bin
+hash -r
 
-# 6. Install dependencies project
-echo "📦 Menginstall dependencies project..."
+# 5. Install dependencies proyek
+echo "📦 Menginstall dependencies proyek..."
 npm install
+
+# 6. Konfigurasi PM2
+echo "⚙️ Mengkonfigurasi PM2..."
+pm2 stop social-media-api || true
+pm2 delete social-media-api || true
+pm2 start index.js --name social-media-api
+pm2 save
+pm2 startup systemd -u root --hp /root
 
 # 7. Konfigurasi Nginx
 echo "🌐 Mengkonfigurasi Nginx..."
