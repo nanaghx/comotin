@@ -38,7 +38,7 @@ async function removeMetadata(inputBuffer) {
 			console.log('File input dibuat:', tempInput);
 
 			// Jalankan ffmpeg untuk menghapus metadata
-			const ffmpeg = spawn('/usr/bin/ffmpeg', [
+			const ffmpeg = spawn('/opt/homebrew/bin/ffmpeg', [
 				'-i', tempInput,
 				'-map_metadata', '-1',
 				'-c:v', 'copy',
