@@ -82,6 +82,9 @@ a2enmod proxy_http
 a2enmod rewrite
 a2enmod ssl
 a2enmod headers
+a2enmod proxy_connect
+a2enmod proxy_balancer
+a2enmod lbmethod_byrequests
 
 # Buat konfigurasi virtual host
 cat > /etc/apache2/sites-available/kraken-downloader.conf << EOL
@@ -89,15 +92,38 @@ cat > /etc/apache2/sites-available/kraken-downloader.conf << EOL
     ServerName ${domain}
     ServerAdmin webmaster@${domain}
     
+    # Proxy settings
+    ProxyRequests Off
+    ProxyPreserveHost On
+    
+    # Timeout settings
+    TimeOut 300
+    ProxyTimeout 300
+    
+    # Proxy configuration
     ProxyPass / http://localhost:3000/
     ProxyPassReverse / http://localhost:3000/
     
-    Header set Access-Control-Allow-Origin "*"
-    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
-    Header set Access-Control-Allow-Headers "Content-Type"
+    # CORS headers
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+    Header always set Access-Control-Expose-Headers "Content-Length, Content-Range"
     
+    # Handle OPTIONS method
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^(.*)$ \$1 [R=200,L]
+    
+    # Error handling
     ErrorLog \${APACHE_LOG_DIR}/error.log
     CustomLog \${APACHE_LOG_DIR}/access.log combined
+    
+    # Additional security headers
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </VirtualHost>
 EOL
 check_error "Gagal membuat konfigurasi Apache"
