@@ -4,9 +4,14 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "start": "nodemon app.js"
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "install": "chmod +x install.sh && ./install.sh",
+    "restart": "pm2 restart kraken-downloader",
+    "stop": "pm2 stop kraken-downloader",
+    "logs": "pm2 logs kraken-downloader"
   },
-  "author": "Gusfahmi Alghazali Caniago",
+  "author": "Alfi Firdaus",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.6.7",

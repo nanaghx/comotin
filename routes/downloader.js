@@ -10,6 +10,12 @@ const os = require('os');
 
 const ytDlp = new YTDlpWrap();
 
+// Konfigurasi Puppeteer untuk menggunakan Chromium sistem
+const puppeteerConfig = {
+	executablePath: '/usr/bin/chromium-browser',
+	args: ['--no-sandbox', '--disable-setuid-sandbox']
+};
+
 function toSupportedFormat(url) {
 	if (url.includes("list=")) {
 		const playlistId = url.substring(url.indexOf("list=") + 5);
@@ -32,7 +38,7 @@ async function removeMetadata(inputBuffer) {
 			console.log('File input dibuat:', tempInput);
 
 			// Jalankan ffmpeg untuk menghapus metadata
-			const ffmpeg = spawn('ffmpeg', [
+			const ffmpeg = spawn('/usr/bin/ffmpeg', [
 				'-i', tempInput,
 				'-map_metadata', '-1',
 				'-c:v', 'copy',
