@@ -1,6 +1,4 @@
 node_modules
-install.sh
-deploy.sh
 .env
 .env.local
 .env.development.local
