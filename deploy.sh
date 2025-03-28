@@ -62,7 +62,7 @@ check_error "Gagal menginstall dependencies proyek"
 
 # 5. Install dependencies sistem
 echo "📦 Menginstall dependencies sistem..."
-apt install -y ffmpeg chromium-browser certbot python3-certbot-nginx nginx
+apt install -y ffmpeg chromium-browser certbot python3-certbot-apache apache2
 check_error "Gagal menginstall dependencies sistem"
 
 # 6. Konfigurasi PM2
@@ -74,48 +74,46 @@ pm2 save
 pm2 startup systemd -u root --hp /root
 check_error "Gagal mengkonfigurasi PM2"
 
-# 7. Konfigurasi Nginx
-echo "🌐 Mengkonfigurasi Nginx..."
+# 7. Konfigurasi Apache
+echo "🌐 Mengkonfigurasi Apache..."
+# Aktifkan modul yang diperlukan
+a2enmod proxy
+a2enmod proxy_http
+a2enmod rewrite
+a2enmod ssl
+a2enmod headers
+
 # Buat konfigurasi virtual host
-cat > /etc/nginx/sites-available/kraken-downloader.conf << EOL
-server {
-    listen 80;
-    server_name ${domain};
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # CORS headers
-        add_header 'Access-Control-Allow-Origin' '*' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
-    }
-
-    # SSL configuration will be added by Certbot
-}
+cat > /etc/apache2/sites-available/kraken-downloader.conf << EOL
+<VirtualHost *:80>
+    ServerName ${domain}
+    ServerAdmin webmaster@${domain}
+    
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+    
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type"
+    
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+    CustomLog \${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
 EOL
-check_error "Gagal membuat konfigurasi Nginx"
+check_error "Gagal membuat konfigurasi Apache"
 
-# 8. Aktifkan konfigurasi Nginx
-echo "🔗 Mengaktifkan konfigurasi Nginx..."
-ln -sf /etc/nginx/sites-available/kraken-downloader.conf /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-check_error "Konfigurasi Nginx tidak valid"
-systemctl restart nginx
-check_error "Gagal me-restart Nginx"
+# 8. Aktifkan konfigurasi Apache
+echo "🔗 Mengaktifkan konfigurasi Apache..."
+a2ensite kraken-downloader.conf
+a2dissite 000-default.conf
+apache2ctl configtest
+check_error "Konfigurasi Apache tidak valid"
+systemctl restart apache2
+check_error "Gagal me-restart Apache"
 
 # 9. Konfigurasi SSL
 echo "🔒 Mengkonfigurasi SSL..."
-certbot --nginx -d ${domain} --non-interactive --agree-tos --email ${email}
+certbot --apache -d ${domain} --non-interactive --agree-tos --email ${email}
 check_error "Gagal mengkonfigurasi SSL"
 
 # 10. Konfigurasi Firewall
@@ -128,7 +126,7 @@ check_error "Gagal mengkonfigurasi firewall"
 
 # 11. Konfigurasi Auto-start
 echo "⚙️ Mengkonfigurasi Auto-start..."
-systemctl enable nginx
+systemctl enable apache2
 systemctl enable pm2-root
 check_error "Gagal mengkonfigurasi auto-start"
 
@@ -146,8 +144,8 @@ echo "
 6. Untuk restart aplikasi: pm2 restart social-media-api
 7. Untuk melihat log: pm2 logs social-media-api
 8. Jika ada masalah dengan PM2, coba: systemctl restart pm2-root
-9. Untuk melihat log Nginx: tail -f /var/log/nginx/error.log
-10. Untuk restart Nginx: systemctl restart nginx
+9. Untuk melihat log Apache: tail -f /var/log/apache2/error.log
+10. Untuk restart Apache: systemctl restart apache2
 11. Untuk melihat status firewall: ufw status
 12. Untuk membuka port tambahan: ufw allow [port]/tcp
 13. Aplikasi akan otomatis start saat server di-restart
