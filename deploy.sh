@@ -23,21 +23,22 @@ apt update && apt upgrade -y
 
 # 2. Install dependencies sistem
 echo "📦 Menginstall dependencies sistem..."
-apt install -y ffmpeg chromium-browser certbot python3-certbot-nginx
+apt install -y ffmpeg chromium-browser certbot python3-certbot-nginx curl gnupg
 
 # 3. Install yt-dlp
 echo "📦 Menginstall yt-dlp..."
 curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 chmod a+rx /usr/local/bin/yt-dlp
 
-# 4. Install Node.js
+# 4. Install Node.js 18.x
 echo "📦 Menginstall Node.js..."
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 apt install -y nodejs
 
-# 5. Install PM2
+# 5. Install PM2 secara global
 echo "📦 Menginstall PM2..."
 npm install -g pm2
+export PATH=$PATH:/usr/local/bin
 
 # 6. Install dependencies project
 echo "📦 Menginstall dependencies project..."
@@ -77,9 +78,17 @@ certbot --nginx -d ${domain} --non-interactive --agree-tos --email ${email}
 
 # 10. Jalankan aplikasi dengan PM2
 echo "🚀 Menjalankan aplikasi..."
+# Pastikan PM2 terinstall dengan benar
+if ! command -v pm2 &> /dev/null; then
+    echo "❌ PM2 tidak ditemukan, mencoba menginstall ulang..."
+    npm install -g pm2
+    export PATH=$PATH:/usr/local/bin
+fi
+
+# Jalankan aplikasi
 pm2 start ecosystem.config.js
 pm2 save
-pm2 startup
+pm2 startup systemd -u root --hp /root
 
 echo "✅ Deployment selesai!"
 echo "📝 Status aplikasi:"
@@ -94,4 +103,5 @@ echo "
 5. Untuk mengupdate SSL: certbot renew
 6. Untuk restart aplikasi: pm2 restart kraken-downloader
 7. Untuk melihat log: pm2 logs kraken-downloader
+8. Jika ada masalah dengan PM2, coba: systemctl restart pm2-root
 " 
