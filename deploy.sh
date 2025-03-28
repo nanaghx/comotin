@@ -69,7 +69,7 @@ check_error "Gagal menginstall dependencies sistem"
 echo "⚙️ Mengkonfigurasi PM2..."
 pm2 stop social-media-api || true
 pm2 delete social-media-api || true
-pm2 start index.js --name social-media-api
+pm2 start app.js --name social-media-api
 pm2 save
 pm2 startup systemd -u root --hp /root
 check_error "Gagal mengkonfigurasi PM2"
