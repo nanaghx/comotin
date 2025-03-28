@@ -7,6 +7,48 @@ print_message() {
     echo "=========================================="
 }
 
+# Fungsi untuk validasi dan pembuatan direktori
+validate_and_create_directory() {
+    local dir="$1"
+    local description="$2"
+    
+    if [ ! -d "$dir" ]; then
+        print_message "Membuat direktori $description: $dir"
+        mkdir -p "$dir"
+        chmod 755 "$dir"
+    else
+        print_message "Direktori $description sudah ada: $dir"
+    fi
+}
+
+# Fungsi untuk memindahkan file project
+move_project_files() {
+    local target_dir="$1"
+    local current_dir="$(pwd)"
+    
+    if [ "$current_dir" != "$target_dir" ]; then
+        print_message "Memindahkan file project ke direktori yang sesuai..."
+        
+        # Buat direktori target jika belum ada
+        validate_and_create_directory "$target_dir" "target"
+        
+        # Pindahkan semua file kecuali direktori yang sudah ada
+        for item in *; do
+            if [ -f "$item" ] || [ -d "$item" ]; then
+                if [ "$item" != "node_modules" ] && [ "$item" != ".git" ]; then
+                    print_message "Memindahkan $item ke $target_dir"
+                    cp -r "$item" "$target_dir/"
+                fi
+            fi
+        done
+        
+        # Pindah ke direktori target
+        cd "$target_dir"
+    else
+        print_message "File project sudah berada di direktori yang sesuai"
+    fi
+}
+
 # Cek apakah script dijalankan sebagai root
 if [ "$EUID" -ne 0 ]; then 
     print_message "Script harus dijalankan sebagai root (gunakan sudo)"
@@ -15,6 +57,16 @@ fi
 
 # Input domain
 read -p "Masukkan domain Anda (contoh: api.example.com): " DOMAIN
+
+# Validasi dan buat direktori utama
+validate_and_create_directory "/var/www/$DOMAIN" "aplikasi"
+validate_and_create_directory "/var/www/$DOMAIN/public" "public"
+validate_and_create_directory "/var/www/$DOMAIN/logs" "logs"
+validate_and_create_directory "/var/www/$DOMAIN/downloads" "downloads"
+validate_and_create_directory "/var/www/$DOMAIN/temp" "temp"
+
+# Pindahkan file project ke direktori yang sesuai
+move_project_files "/var/www/$DOMAIN"
 
 # Update sistem
 print_message "Memperbarui sistem..."
@@ -75,23 +127,43 @@ print_message "Menginstall Chromium dan dependencies untuk Puppeteer..."
 apt install -y chromium-browser
 apt install -y libgbm1 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 libgcc1 libglib2.0-0 libgtk-3-0 libnspr4 libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6
 
-# Buat direktori aplikasi
-print_message "Menyiapkan direktori aplikasi..."
-mkdir -p /var/www/$DOMAIN
+# Pindah ke direktori aplikasi
 cd /var/www/$DOMAIN
 
 # Install dependencies Node.js
 print_message "Menginstall dependencies Node.js..."
 npm install
 
-# Buat direktori logs
-print_message "Membuat direktori logs..."
-mkdir -p logs
-chmod 755 logs
-
 # Setup environment variables
 print_message "Menyiapkan environment variables..."
+
+# Buat file .env.example jika belum ada
+cat > .env.example << EOF
+# Path ke FFmpeg
+FFMPEG_PATH=/usr/bin/ffmpeg
+
+# Path ke Chrome/Chromium
+CHROME_PATH=/usr/bin/chromium-browser
+
+# Path ke yt-dlp
+YT_DLP_PATH=/usr/local/bin/yt-dlp
+
+# Environment
+NODE_ENV=production
+
+# Port aplikasi
+PORT=3000
+
+# Konfigurasi lainnya
+MAX_DOWNLOAD_SIZE=100
+DOWNLOAD_DIR=downloads
+TEMP_DIR=temp
+EOF
+
+# Salin .env.example ke .env
 cp .env.example .env
+
+# Update nilai di .env
 sed -i "s|FFMPEG_PATH=.*|FFMPEG_PATH=/usr/bin/ffmpeg|" .env
 sed -i "s|CHROME_PATH=.*|CHROME_PATH=/usr/bin/chromium-browser|" .env
 sed -i "s|YT_DLP_PATH=.*|YT_DLP_PATH=/usr/local/bin/yt-dlp|" .env
@@ -100,11 +172,17 @@ sed -i "s|PORT=.*|PORT=3000|" .env
 
 # Setup SSL
 print_message "Menyiapkan SSL..."
-mkdir -p /etc/apache2/ssl/$DOMAIN
-mv certificate /etc/apache2/ssl/$DOMAIN/
-mv privatekey /etc/apache2/ssl/$DOMAIN/
-chmod 600 /etc/apache2/ssl/$DOMAIN/privatekey
-chmod 644 /etc/apache2/ssl/$DOMAIN/certificate
+validate_and_create_directory "/etc/apache2/ssl/$DOMAIN" "SSL"
+
+# Pindahkan file SSL jika ada
+if [ -f "certificate" ] && [ -f "privatekey" ]; then
+    mv certificate /etc/apache2/ssl/$DOMAIN/
+    mv privatekey /etc/apache2/ssl/$DOMAIN/
+    chmod 600 /etc/apache2/ssl/$DOMAIN/privatekey
+    chmod 644 /etc/apache2/ssl/$DOMAIN/certificate
+else
+    print_message "Peringatan: File SSL tidak ditemukan. Pastikan untuk menambahkan file SSL nanti."
+fi
 
 # Konfigurasi Apache
 print_message "Mengkonfigurasi Apache..."
@@ -184,6 +262,8 @@ print_message "Mengatur permission..."
 chown -R www-data:www-data /var/www/$DOMAIN
 chmod -R 755 /var/www/$DOMAIN
 chmod -R 777 /var/www/$DOMAIN/logs
+chmod -R 777 /var/www/$DOMAIN/downloads
+chmod -R 777 /var/www/$DOMAIN/temp
 chmod 644 .env
 
 # Jalankan aplikasi dengan PM2
