@@ -7,12 +7,13 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+require('dotenv').config();
 
-const ytDlp = new YTDlpWrap();
+const ytDlp = new YTDlpWrap(process.env.YT_DLP_PATH);
 
 // Konfigurasi Puppeteer untuk menggunakan Chromium sistem
 const puppeteerConfig = {
-	executablePath: '/usr/bin/chromium-browser',
+	executablePath: process.env.CHROME_PATH,
 	args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 };
 
@@ -38,7 +39,7 @@ async function removeMetadata(inputBuffer) {
 			console.log('File input dibuat:', tempInput);
 
 			// Jalankan ffmpeg untuk menghapus metadata
-			const ffmpeg = spawn('/opt/homebrew/bin/ffmpeg', [
+			const ffmpeg = spawn(process.env.FFMPEG_PATH, [
 				'-i', tempInput,
 				'-map_metadata', '-1',
 				'-c:v', 'copy',
