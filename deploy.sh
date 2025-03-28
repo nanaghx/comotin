@@ -49,7 +49,7 @@ check_error "Gagal menginstall Node.js"
 
 # 3. Install NPM dan PM2
 echo "📦 Menginstall NPM dan PM2..."
-npm install -g npm@latest
+npm install -g npm@10.2.4
 check_error "Gagal mengupdate NPM"
 
 npm install -g pm2
