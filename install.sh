@@ -47,12 +47,6 @@ print_message "Menyiapkan direktori aplikasi..."
 mkdir -p /var/www/$DOMAIN
 cd /var/www/$DOMAIN
 
-# Clone repository (ganti dengan URL repository Anda)
-print_message "Mengclone repository..."
-git clone https://github.com/masalfi/donlotin.git .
-git checkout main
-git pull origin main
-
 # Install dependencies Node.js
 print_message "Menginstall dependencies Node.js..."
 npm install
