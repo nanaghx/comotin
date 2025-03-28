@@ -1,0 +1,10 @@
+{
+    "build": {
+      "command": "npm run build",
+      "environment": {
+        "NODE_VERSION": "18"
+      }
+    },
+    "devCommand": "npm run dev",
+    "framework": "node"
+  }

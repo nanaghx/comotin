@@ -411,10 +411,10 @@ router.post("/tiktok", async (req, res) => {
 		console.log('Data berhasil diekstrak');
 
 		// Filter format untuk mendapatkan video tanpa watermark
-		const formats = videoInfo.formats && videoInfo.formats.filter(format => 
+		const formats = videoInfo.formats?.filter(format => 
 			format.ext === 'mp4' && 
 			format.protocol === 'https' &&
-			(!format.format_note || !format.format_note.toLowerCase().includes('watermark'))
+			!format.format_note?.toLowerCase().includes('watermark')
 		) || [];
 
 		const response = {
