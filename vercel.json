@@ -1,10 +1,19 @@
 {
-    "build": {
-      "command": "npm run build",
-      "environment": {
-        "NODE_VERSION": "18"
-      }
-    },
-    "devCommand": "npm run dev",
-    "framework": "node"
-  }
+  "version": 2,
+  "builds": [
+    {
+      "src": "app.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "framework": "express"
+}
