@@ -8,7 +8,7 @@ apt update && apt upgrade -y
 
 # 2. Install dependencies sistem
 echo "📦 Menginstall dependencies sistem..."
-apt install -y ffmpeg chromium-browser
+apt install -y ffmpeg chromium-browser certbot python3-certbot-nginx
 
 # 3. Install yt-dlp
 echo "📦 Menginstall yt-dlp..."
@@ -28,12 +28,53 @@ npm install -g pm2
 echo "📦 Menginstall dependencies project..."
 npm install
 
-# 7. Jalankan aplikasi dengan PM2
+# 7. Konfigurasi Nginx
+echo "🌐 Mengkonfigurasi Nginx..."
+cat > /etc/nginx/sites-available/kraken-downloader << 'EOL'
+server {
+    listen 80;
+    server_name your-domain.com;  # Ganti dengan domain Anda
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOL
+
+# 8. Aktifkan konfigurasi Nginx
+echo "🔗 Mengaktifkan konfigurasi Nginx..."
+ln -s /etc/nginx/sites-available/kraken-downloader /etc/nginx/sites-enabled/
+rm /etc/nginx/sites-enabled/default  # Hapus konfigurasi default jika ada
+nginx -t
+systemctl restart nginx
+
+# 9. Konfigurasi SSL dengan Let's Encrypt
+echo "🔒 Mengkonfigurasi SSL..."
+read -p "Masukkan domain Anda (contoh: example.com): " domain
+certbot --nginx -d $domain --non-interactive --agree-tos --email your-email@example.com
+
+# 10. Jalankan aplikasi dengan PM2
 echo "🚀 Menjalankan aplikasi..."
-pm2 start app.js --name "kraken-downloader"
+pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 
 echo "✅ Deployment selesai!"
 echo "📝 Status aplikasi:"
-pm2 status 
+pm2 status
+
+echo "
+🔍 Catatan Penting:
+1. Pastikan domain Anda sudah diarahkan ke IP server
+2. Port 80 dan 443 harus terbuka di firewall
+3. Jika menggunakan aapanel, konfigurasi SSL bisa dilakukan melalui panel
+4. Untuk mengupdate SSL: certbot renew
+" 
