@@ -921,55 +921,87 @@ router.post("/detect-platform", async (req, res) => {
 		const { url } = req.body;
 		console.log('Mendeteksi platform untuk URL:', url);
 
+		if (!url) {
+			throw new Error('URL tidak boleh kosong');
+		}
+
+		// Validasi format URL
+		try {
+			new URL(url);
+		} catch (e) {
+			throw new Error('Format URL tidak valid');
+		}
+
 		let platform = '';
-		let endpoint = '';
 
 		// Deteksi platform berdasarkan URL
 		if (url.includes('facebook.com') || url.includes('fb.watch')) {
 			platform = 'facebook';
-			endpoint = '/api/facebook';
 		} else if (url.includes('tiktok.com') || url.includes('vt.tiktok.com')) {
 			platform = 'tiktok';
-			endpoint = '/api/tiktok';
 		} else if (url.includes('youtube.com') || url.includes('youtu.be')) {
 			platform = 'youtube';
-			endpoint = '/api/youtube';
 		} else if (url.includes('instagram.com')) {
 			platform = 'instagram';
-			endpoint = '/api/instagram';
 		} else if (url.includes('twitter.com') || url.includes('x.com')) {
 			platform = 'twitter';
-			endpoint = '/api/twitter';
 		} else if (url.includes('twitch.tv')) {
 			platform = 'twitch';
-			endpoint = '/api/twitch';
 		} else if (url.includes('dailymotion.com') || url.includes('dai.ly')) {
 			platform = 'dailymotion';
-			endpoint = '/api/dailymotion';
-			// Tambahkan peringatan untuk Dailymotion
 			console.warn('PERINGATAN: Untuk video Dailymotion, sebaiknya metadata dihapus untuk menghindari masalah DRM');
 		} else {
 			throw new Error('Platform tidak didukung');
 		}
 
-		// Panggil endpoint yang sesuai
-		const response = await fetch(`http://localhost:3000${endpoint}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ url })
+		// Jalankan yt-dlp untuk mendapatkan informasi video
+		const process = spawn('yt-dlp', [
+			'--dump-json',
+			'--no-check-certificates',
+			'--no-warnings',
+			url
+		]);
+
+		let output = '';
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			output += data.toString();
 		});
 
-		const data = await response.json();
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+		});
 
-		if (data.status === 'success') {
-			// Tambahkan informasi platform ke response
-			data.platform = platform;
-			res.json(data);
-		} else {
-			throw new Error(data.message || 'Gagal mengambil informasi video');
-		}
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		const videoInfo = JSON.parse(output);
+
+		res.json({
+			status: 'success',
+			platform,
+			owner: videoInfo.uploader || videoInfo.channel || '',
+			displayUrl: videoInfo.thumbnail || '',
+			caption: videoInfo.description || '',
+			title: videoInfo.title || '',
+			duration: videoInfo.duration || 0,
+			totalViews: videoInfo.view_count || 0,
+			postUrl: url,
+			dataFormats: [{
+				dataDownload: videoInfo.url,
+				format: videoInfo.format || '720p',
+				ext: videoInfo.ext || 'mp4',
+				filesize: videoInfo.filesize || 0
+			}]
+		});
 	} catch (error) {
 		console.error('Error saat mendeteksi platform:', error);
 		res.json({ 
