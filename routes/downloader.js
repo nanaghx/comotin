@@ -9,13 +9,72 @@ const path = require('path');
 const os = require('os');
 require('dotenv').config();
 
-const ytDlp = new YTDlpWrap(process.env.YT_DLP_PATH);
+// Ambil path dari environment variables dengan validasi
+const FFMPEG_PATH = process.env.FFMPEG_PATH || '/opt/homebrew/bin/ffmpeg';
+const YT_DLP_PATH = process.env.YT_DLP_PATH || '/usr/local/bin/yt-dlp';
+const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/chromium-browser';
 
-// Konfigurasi Puppeteer untuk menggunakan Chromium sistem
+// Validasi keberadaan executables
+function validateExecutables() {
+	const executables = [
+		{ path: FFMPEG_PATH, name: 'FFmpeg' },
+		{ path: YT_DLP_PATH, name: 'yt-dlp' },
+		{ path: CHROME_PATH, name: 'Chrome/Chromium' }
+	];
+
+	for (const exe of executables) {
+		if (!fs.existsSync(exe.path)) {
+			console.error(`ERROR: ${exe.name} tidak ditemukan di ${exe.path}`);
+			console.error(`Pastikan ${exe.name} terinstall dan path di .env benar`);
+		}
+	}
+}
+
+// Jalankan validasi saat startup
+validateExecutables();
+
+// Inisialisasi YTDlpWrap dengan path yang benar
+const ytDlp = new YTDlpWrap(YT_DLP_PATH);
+
+// Konfigurasi Puppeteer
 const puppeteerConfig = {
-	executablePath: process.env.CHROME_PATH,
+	executablePath: CHROME_PATH,
 	args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 };
+
+// Validasi URL
+function isValidUrl(url) {
+	try {
+		new URL(url);
+		return true;
+	} catch (err) {
+		return false;
+	}
+}
+
+// Validasi URL Instagram
+function isInstagramUrl(url) {
+	return url.includes('instagram.com') || url.includes('instagr.am');
+}
+
+// Validasi URL YouTube
+function isYoutubeUrl(url) {
+	return url.includes('youtube.com') || url.includes('youtu.be');
+}
+
+// Fungsi untuk membersihkan temporary files
+function cleanupTempFiles(files) {
+	files.forEach(file => {
+		if (fs.existsSync(file)) {
+			try {
+				fs.unlinkSync(file);
+				console.log(`File temporary ${file} berhasil dihapus`);
+			} catch (err) {
+				console.error(`Error menghapus file temporary ${file}:`, err);
+			}
+		}
+	});
+}
 
 function toSupportedFormat(url) {
 	if (url.includes("list=")) {
@@ -27,6 +86,142 @@ function toSupportedFormat(url) {
 	return url;
 }
 
+// Fungsi untuk mengekstrak audio menggunakan ffmpeg
+async function extractAudio(inputBuffer) {
+	return new Promise((resolve, reject) => {
+		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
+		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
+
+		try {
+			// Validasi path ffmpeg
+			if (!fs.existsSync(FFMPEG_PATH)) {
+				throw new Error(`FFmpeg tidak ditemukan di ${FFMPEG_PATH}`);
+			}
+
+			fs.writeFileSync(tempInput, inputBuffer);
+
+			const ffmpeg = spawn(FFMPEG_PATH, [
+				'-i', tempInput,
+				'-vn',
+				'-acodec', 'libmp3lame',
+				'-ab', '320k',
+				'-ar', '44100',
+				'-ac', '2',
+				'-f', 'mp3',
+				'-y',
+				tempOutput
+			]);
+
+			let ffmpegError = '';
+
+			ffmpeg.stderr.on('data', (data) => {
+				ffmpegError += data.toString();
+				console.log('ffmpeg:', data.toString());
+			});
+
+			ffmpeg.on('close', (code) => {
+				try {
+					if (code === 0) {
+						const outputBuffer = fs.readFileSync(tempOutput);
+						fs.unlinkSync(tempInput);
+						fs.unlinkSync(tempOutput);
+						resolve(outputBuffer);
+					} else {
+						reject(new Error(`ffmpeg gagal dengan kode ${code}: ${ffmpegError}`));
+					}
+				} catch (err) {
+					reject(new Error('Error membaca file output: ' + err.message));
+				} finally {
+					// Cleanup temporary files
+					[tempInput, tempOutput].forEach(file => {
+						if (fs.existsSync(file)) {
+							try {
+								fs.unlinkSync(file);
+							} catch (err) {
+								console.error(`Error menghapus file temporary ${file}:`, err);
+							}
+						}
+					});
+				}
+			});
+
+			ffmpeg.on('error', (err) => {
+				// Cleanup temporary files on error
+				[tempInput, tempOutput].forEach(file => {
+					if (fs.existsSync(file)) {
+						try {
+							fs.unlinkSync(file);
+						} catch (err) {
+							console.error(`Error menghapus file temporary ${file}:`, err);
+						}
+					}
+				});
+				reject(new Error('Error menjalankan ffmpeg: ' + err.message));
+			});
+		} catch (err) {
+			// Cleanup temporary files on error
+			[tempInput, tempOutput].forEach(file => {
+				if (fs.existsSync(file)) {
+					try {
+						fs.unlinkSync(file);
+					} catch (err) {
+						console.error(`Error menghapus file temporary ${file}:`, err);
+					}
+				}
+			});
+			reject(new Error('Error dalam extractAudio: ' + err.message));
+		}
+	});
+}
+
+// Fungsi untuk menghapus audio menggunakan ffmpeg
+async function removeAudio(inputBuffer) {
+	return new Promise((resolve, reject) => {
+		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
+		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
+
+		try {
+			fs.writeFileSync(tempInput, inputBuffer);
+
+			const ffmpeg = spawn(FFMPEG_PATH, [
+				'-i', tempInput,
+				'-an',
+				'-c:v', 'copy',
+				'-y',
+				tempOutput
+			]);
+
+			let ffmpegError = '';
+
+			ffmpeg.stderr.on('data', (data) => {
+				ffmpegError += data.toString();
+				console.log('ffmpeg:', data.toString());
+			});
+
+			ffmpeg.on('close', (code) => {
+				try {
+					if (code === 0) {
+						const outputBuffer = fs.readFileSync(tempOutput);
+						fs.unlinkSync(tempInput);
+						fs.unlinkSync(tempOutput);
+						resolve(outputBuffer);
+					} else {
+						reject(new Error(`ffmpeg gagal dengan kode ${code}: ${ffmpegError}`));
+					}
+				} catch (err) {
+					reject(new Error('Error membaca file output: ' + err.message));
+				}
+			});
+
+			ffmpeg.on('error', (err) => {
+				reject(new Error('Error menjalankan ffmpeg: ' + err.message));
+			});
+		} catch (err) {
+			reject(new Error('Error dalam removeAudio: ' + err.message));
+		}
+	});
+}
+
 // Fungsi untuk menghapus metadata menggunakan ffmpeg
 async function removeMetadata(inputBuffer) {
 	return new Promise((resolve, reject) => {
@@ -34,55 +229,35 @@ async function removeMetadata(inputBuffer) {
 		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
 
 		try {
-			// Tulis buffer ke file temporary
 			fs.writeFileSync(tempInput, inputBuffer);
-			console.log('File input dibuat:', tempInput);
 
-			// Jalankan ffmpeg untuk menghapus metadata
-			const ffmpeg = spawn(process.env.FFMPEG_PATH, [
+			const ffmpeg = spawn(FFMPEG_PATH, [
 				'-i', tempInput,
 				'-map_metadata', '-1',
-				'-c:v', 'copy',
-				'-c:a', 'copy',
+				'-c', 'copy',
 				'-y',
 				tempOutput
 			]);
 
-			let ffmpegOutput = '';
+			let ffmpegError = '';
 
 			ffmpeg.stderr.on('data', (data) => {
-				ffmpegOutput += data.toString();
+				ffmpegError += data.toString();
 				console.log('ffmpeg:', data.toString());
 			});
 
 			ffmpeg.on('close', (code) => {
-				// Hapus file temporary input
 				try {
-					fs.unlinkSync(tempInput);
-					console.log('File input dihapus');
-				} catch (err) {
-					console.error('Error menghapus file input:', err);
-				}
-
-				if (code === 0) {
-					try {
+					if (code === 0) {
 						const outputBuffer = fs.readFileSync(tempOutput);
+						fs.unlinkSync(tempInput);
 						fs.unlinkSync(tempOutput);
-						console.log('File output dihapus');
 						resolve(outputBuffer);
-					} catch (err) {
-						reject(new Error('Error membaca file output: ' + err.message));
+					} else {
+						reject(new Error(`ffmpeg gagal dengan kode ${code}: ${ffmpegError}`));
 					}
-				} else {
-					// Hapus file output jika ada error
-					try {
-						if (fs.existsSync(tempOutput)) {
-							fs.unlinkSync(tempOutput);
-						}
-					} catch (err) {
-						console.error('Error menghapus file output:', err);
-					}
-					reject(new Error('ffmpeg gagal dengan kode ' + code + ': ' + ffmpegOutput));
+				} catch (err) {
+					reject(new Error('Error membaca file output: ' + err.message));
 				}
 			});
 
@@ -95,84 +270,31 @@ async function removeMetadata(inputBuffer) {
 	});
 }
 
-// Fungsi untuk menghapus audio menggunakan ffmpeg
-async function removeAudio(inputBuffer) {
-	return new Promise((resolve, reject) => {
-		// Buat file temporary untuk input
-		const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp4`);
-		const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp4`);
-
-		// Tulis buffer ke file temporary
-		fs.writeFileSync(tempInput, inputBuffer);
-
-		console.log('Memulai proses penghapusan audio dengan ffmpeg...');
-
-		// Jalankan ffmpeg untuk menghapus audio
-		const ffmpeg = spawn('ffmpeg', [
-			'-i', tempInput,
-			'-c:v', 'copy',
-			'-an',  // Menghapus semua track audio
-			'-map', '0:v:0',  // Hanya mengambil track video
-			'-map_metadata', '-1',  // Hapus metadata
-			'-y',  // Overwrite output file
-			tempOutput
-		]);
-
-		let errorOutput = '';
-
-		ffmpeg.stderr.on('data', (data) => {
-			errorOutput += data.toString();
-			console.log('ffmpeg output:', data.toString());
-		});
-
-		ffmpeg.on('close', (code) => {
-			console.log('ffmpeg process closed with code:', code);
-			
-			// Hapus file temporary input
-			try {
-				fs.unlinkSync(tempInput);
-			} catch (error) {
-				console.error('Error deleting input file:', error);
-			}
-
-			if (code === 0) {
-				try {
-					// Baca file output
-					const outputBuffer = fs.readFileSync(tempOutput);
-					// Hapus file temporary output
-					fs.unlinkSync(tempOutput);
-					console.log('Audio berhasil dihapus dan file output dibuat');
-					resolve(outputBuffer);
-				} catch (error) {
-					console.error('Error reading output file:', error);
-					reject(error);
-				}
-			} else {
-				// Hapus file temporary output jika ada
-				if (fs.existsSync(tempOutput)) {
-					try {
-						fs.unlinkSync(tempOutput);
-					} catch (error) {
-						console.error('Error deleting output file:', error);
-					}
-				}
-				reject(new Error(`ffmpeg process failed with code ${code}: ${errorOutput}`));
-			}
-		});
-	});
-}
-
-router.post("/instagram", async (req, res) => {
+router.post("/instagram", async (req, res, next) => {
+	const tempFiles = [];
 	try {
-		const url_post = req.body.url;
-		console.log('Mencoba mengakses URL Instagram:', url_post);
+		const { url } = req.body;
+		
+		if (!url) {
+			throw new Error('URL tidak boleh kosong');
+		}
+
+		if (!isValidUrl(url)) {
+			throw new Error('URL tidak valid');
+		}
+
+		if (!isInstagramUrl(url)) {
+			throw new Error('URL bukan dari Instagram');
+		}
+
+		console.log('Mencoba mengakses URL Instagram:', url);
 
 		// Jalankan yt-dlp sebagai proses terpisah
 		const process = spawn('yt-dlp', [
 			'--dump-json',
 			'--no-check-certificates',
 			'--no-warnings',
-			url_post
+			url
 		]);
 
 		let output = '';
@@ -207,7 +329,7 @@ router.post("/instagram", async (req, res) => {
 			title: videoInfo.title || '',
 			duration: videoInfo.duration || 0,
 			totalViews: videoInfo.view_count || 0,
-			postUrl: url_post,
+			postUrl: url,
 			dataFormats: []
 		};
 
@@ -228,13 +350,28 @@ router.post("/instagram", async (req, res) => {
 		res.json(response);
 	} catch (error) {
 		console.error('Error saat mengambil data Instagram:', error);
-		res.json({ status: "error", details: error.message });
+		cleanupTempFiles(tempFiles);
+		next(error);
 	}
 });
 
-router.post("/youtube", async (req, res) => {
+router.post("/youtube", async (req, res, next) => {
+	const tempFiles = [];
 	try {
 		const { url } = req.body;
+
+		if (!url) {
+			throw new Error('URL tidak boleh kosong');
+		}
+
+		if (!isValidUrl(url)) {
+			throw new Error('URL tidak valid');
+		}
+
+		if (!isYoutubeUrl(url)) {
+			throw new Error('URL bukan dari YouTube');
+		}
+
 		console.log('Mencoba mengakses URL YouTube:', url);
 
 		// Konversi URL mobile ke format desktop
@@ -336,7 +473,8 @@ router.post("/youtube", async (req, res) => {
 		res.json(response);
 	} catch (error) {
 		console.error('Error saat mengambil data YouTube:', error);
-		res.json({ status: "error", details: error.message });
+		cleanupTempFiles(tempFiles);
+		next(error);
 	}
 });
 
@@ -599,30 +737,55 @@ router.post("/dailymotion", async (req, res) => {
 // Endpoint untuk mengunduh video YouTube
 router.post("/youtube/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
 		console.log('Mencoba mengunduh video YouTube:', url);
 		console.log('Status mute:', mute);
 		console.log('Status shouldRemoveMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
+
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_youtube_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
 
 		// Buat buffer untuk menyimpan data
 		let buffer = Buffer.alloc(0);
 		let errorOutput = '';
 
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', FFMPEG_PATH,
+			url
+		] : [
 			'--format', 'best[ext=mp4]',
 			'--output', '-',
 			'--no-check-certificates',
 			'--no-warnings',
 			'--no-playlist',
 			'--no-part',
-			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--ffmpeg-location', FFMPEG_PATH,
 			url
-		]);
+		];
+
+		// Jalankan yt-dlp
+		const process = spawn(YT_DLP_PATH, ytDlpOptions);
 
 		// Kumpulkan data dari stdout
 		process.stdout.on('data', (data) => {
@@ -655,36 +818,57 @@ router.post("/youtube/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
-				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
-				// Lanjutkan tanpa menghapus metadata jika terjadi error
-			}
-		}
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
 			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn(FFMPEG_PATH, [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
 			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
+				console.error('Error saat memproses audio:', error);
 				throw error;
 			}
+		} else {
+			// Proses video seperti biasa
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
 		}
 
-		// Kirim data ke client
+		// Kirim file
 		if (buffer.length > 0) {
 			res.setHeader('Content-Length', buffer.length);
 			res.send(buffer);
 		} else {
-			throw new Error('Tidak ada data video yang diterima');
+			throw new Error('Tidak ada data yang diterima');
 		}
 
 		// Handle client disconnect
@@ -692,7 +876,7 @@ router.post("/youtube/download", async (req, res) => {
 			process.kill();
 		});
 	} catch (error) {
-		console.error('Error saat mengunduh video YouTube:', error);
+		console.error('Error saat mengunduh:', error);
 		if (!res.headersSent) {
 			res.status(500).json({ 
 				status: "error", 
@@ -705,34 +889,58 @@ router.post("/youtube/download", async (req, res) => {
 // Endpoint untuk mengunduh video TikTok
 router.post("/tiktok/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengakses URL TikTok:', url);
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
+		console.log('Mencoba mengunduh video TikTok:', url);
 		console.log('Status mute:', mute);
 		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
 
-		// Buat buffer untuk menyimpan data
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_tiktok_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
 
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', FFMPEG_PATH,
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.tiktok.com/',
+			url
+		] : [
 			'--format', 'best[ext=mp4]',
 			'--output', '-',
 			'--no-check-certificates',
 			'--no-warnings',
 			'--no-playlist',
 			'--no-part',
-			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--ffmpeg-location', FFMPEG_PATH,
 			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
 			'--add-header', 'Referer:https://www.tiktok.com/',
 			url
-		]);
+		];
 
-		// Kumpulkan data dari stdout
+		// Jalankan yt-dlp
+		const process = spawn(YT_DLP_PATH, ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
 		process.stdout.on('data', (data) => {
 			buffer = Buffer.concat([buffer, data]);
 		});
@@ -752,7 +960,6 @@ router.post("/tiktok/download", async (req, res) => {
 			}
 		});
 
-		// Tunggu proses selesai
 		await new Promise((resolve, reject) => {
 			process.on('close', (code) => {
 				if (code === 0) {
@@ -763,36 +970,56 @@ router.post("/tiktok/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
-				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
-				// Lanjutkan tanpa menghapus metadata jika terjadi error
-			}
-		}
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
 			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn(FFMPEG_PATH, [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
 			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
+				console.error('Error saat memproses audio:', error);
 				throw error;
 			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
 		}
 
-		// Kirim data ke client
+		// Kirim file
 		if (buffer.length > 0) {
 			res.setHeader('Content-Length', buffer.length);
 			res.send(buffer);
 		} else {
-			throw new Error('Tidak ada data video yang diterima');
+			throw new Error('Tidak ada data yang diterima');
 		}
 
 		// Handle client disconnect
@@ -800,7 +1027,7 @@ router.post("/tiktok/download", async (req, res) => {
 			process.kill();
 		});
 	} catch (error) {
-		console.error('Error saat mengunduh video TikTok:', error);
+		console.error('Error saat mengunduh:', error);
 		if (!res.headersSent) {
 			res.status(500).json({ 
 				status: "error", 
@@ -813,33 +1040,56 @@ router.post("/tiktok/download", async (req, res) => {
 // Endpoint untuk mengunduh video Facebook
 router.post("/facebook/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengunduh video Facebook:', url);
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
+		console.log('Mencoba mengunduh dari Facebook:', url);
 		console.log('Status mute:', mute);
 		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
 
-		// Buat buffer untuk menyimpan data
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_facebook_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
 
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', FFMPEG_PATH,
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			url
+		] : [
 			'--format', 'best[ext=mp4]',
 			'--output', '-',
 			'--no-check-certificates',
 			'--no-warnings',
 			'--no-playlist',
 			'--no-part',
-			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--ffmpeg-location', FFMPEG_PATH,
 			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
 			url
-		]);
+		];
 
-		// Kumpulkan data dari stdout
+		// Jalankan yt-dlp
+		const process = spawn(YT_DLP_PATH, ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
 		process.stdout.on('data', (data) => {
 			buffer = Buffer.concat([buffer, data]);
 		});
@@ -859,7 +1109,6 @@ router.post("/facebook/download", async (req, res) => {
 			}
 		});
 
-		// Tunggu proses selesai
 		await new Promise((resolve, reject) => {
 			process.on('close', (code) => {
 				if (code === 0) {
@@ -870,35 +1119,56 @@ router.post("/facebook/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
-				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
-			}
-		}
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
 			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn(FFMPEG_PATH, [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
 			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
+				console.error('Error saat memproses audio:', error);
 				throw error;
 			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
 		}
 
-		// Kirim data ke client
+		// Kirim file
 		if (buffer.length > 0) {
 			res.setHeader('Content-Length', buffer.length);
 			res.send(buffer);
 		} else {
-			throw new Error('Tidak ada data video yang diterima');
+			throw new Error('Tidak ada data yang diterima');
 		}
 
 		// Handle client disconnect
@@ -906,7 +1176,7 @@ router.post("/facebook/download", async (req, res) => {
 			process.kill();
 		});
 	} catch (error) {
-		console.error('Error saat mengunduh video Facebook:', error);
+		console.error('Error saat mengunduh:', error);
 		if (!res.headersSent) {
 			res.status(500).json({ 
 				status: "error", 
@@ -1015,85 +1285,100 @@ router.post("/detect-platform", async (req, res) => {
 // Endpoint untuk mengunduh video Instagram
 router.post("/instagram/download", async (req, res) => {
 	try {
-		const { url, mute, shouldRemoveMetadata } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
 		console.log('Mencoba mengakses URL Instagram:', url);
 		console.log('Status mute:', mute);
 		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Jalankan yt-dlp sebagai proses terpisah
-		const process = spawn('yt-dlp', [
-			'--dump-json',
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
+
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
 			'--no-check-certificates',
 			'--no-warnings',
 			url
-		]);
-
-		let output = '';
-		let errorOutput = '';
-
-		process.stdout.on('data', (data) => {
-			output += data.toString();
-		});
-
-		process.stderr.on('data', (data) => {
-			errorOutput += data.toString();
-		});
-
-		await new Promise((resolve, reject) => {
-			process.on('close', (code) => {
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
-				}
-			});
-		});
-
-		const videoInfo = JSON.parse(output);
-		console.log('Video info:', videoInfo);
-
-		// Download video
-		const downloadProcess = spawn('yt-dlp', [
+		] : [
 			'--no-check-certificates',
 			'--no-warnings',
 			'--format', 'best',
 			'--output', '-',
 			url
-		]);
+		];
 
-		let videoBuffer = Buffer.alloc(0);
-		downloadProcess.stdout.on('data', (chunk) => {
-			videoBuffer = Buffer.concat([videoBuffer, chunk]);
+		const process = spawn('yt-dlp', ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+
+		process.stdout.on('data', (chunk) => {
+			buffer = Buffer.concat([buffer, chunk]);
 		});
 
 		await new Promise((resolve, reject) => {
-			downloadProcess.on('close', (code) => {
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error('Gagal mengunduh video'));
-				}
+			process.on('close', (code) => {
+				if (code === 0) resolve();
+				else reject(new Error('Gagal mengunduh konten'));
 			});
 		});
 
-		let finalBuffer = videoBuffer;
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
-			finalBuffer = await removeAudio(finalBuffer);
+			try {
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn(FFMPEG_PATH, [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
+
+				res.setHeader('Content-Type', 'audio/mpeg');
+				res.setHeader('Content-Disposition', `attachment; filename=audio_instagram_${Date.now()}.mp3`);
+			} catch (error) {
+				console.error('Error saat memproses audio:', error);
+				throw error;
+			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata dari video...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
+
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', `attachment; filename=video_instagram_${mute ? 'mute_' : ''}${Date.now()}.mp4`);
 		}
 
-		// Hapus metadata jika diminta
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata dari video...');
-			finalBuffer = await removeMetadata(finalBuffer);
-		}
-
-		// Set header response
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', `attachment; filename="video_instagram${mute ? '_mute' : ''}.mp4"`);
-		res.send(finalBuffer);
+		res.send(buffer);
 	} catch (error) {
 		console.error('Error:', error);
 		res.status(500).json({
@@ -1105,214 +1390,47 @@ router.post("/instagram/download", async (req, res) => {
 
 router.post("/:platform/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true, format = 'video' } = req.body;
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
 		const platform = req.params.platform;
 		console.log(`Mencoba mengunduh dari ${platform}:`, url);
 		console.log('Status mute:', mute);
 		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Konversi URL mobile ke format desktop untuk YouTube
+		if (!url) {
+			throw new Error('URL tidak boleh kosong');
+		}
+
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
+
 		let processedUrl = url;
-		if (platform === 'youtube' && url.includes('youtu.be/')) {
-			const videoId = url.split('youtu.be/')[1].split('?')[0];
-			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
-		} else if (platform === 'youtube' && url.includes('youtube.com/shorts/')) {
-			const videoId = url.split('shorts/')[1].split('?')[0];
-			processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
-		}
-
-		// Buat array opsi yt-dlp
-		const ytDlpOptions = [
-			'--no-check-certificates',
-			'--no-warnings',
-			'--output', '-'
-		];
-
-		// Jika format audio diminta
-		if (format === 'audio') {
-			ytDlpOptions.push('--extract-audio', '--audio-format', 'mp3');
-		} else {
-			// Format normal dengan video dan audio
-			ytDlpOptions.push('--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
-		}
-
-		// Tambahkan URL ke opsi
-		ytDlpOptions.push(processedUrl);
-
-		// Jalankan yt-dlp
-		const process = spawn('yt-dlp', ytDlpOptions);
-
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
-
-		process.stdout.on('data', (data) => {
-			buffer = Buffer.concat([buffer, data]);
-		});
-
-		process.stderr.on('data', (data) => {
-			errorOutput += data.toString();
-		});
-
-		await new Promise((resolve, reject) => {
-			process.on('close', (code) => {
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
-				}
-			});
-		});
-
-		// Hapus metadata jika diminta
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			buffer = await removeMetadata(buffer);
-			console.log('Metadata berhasil dihapus');
-		}
-
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
-			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
-				throw error;
+		if (platform === 'youtube') {
+			if (url.includes('youtu.be/')) {
+				const videoId = url.split('youtu.be/')[1].split('?')[0];
+				processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+			} else if (url.includes('youtube.com/shorts/')) {
+				const videoId = url.split('shorts/')[1].split('?')[0];
+				processedUrl = `https://www.youtube.com/watch?v=${videoId}`;
 			}
 		}
 
-		// Set header response
-		res.setHeader('Content-Type', format === 'audio' ? 'audio/mpeg' : 'video/mp4');
-		res.setHeader('Content-Disposition', `attachment; filename=video_${mute ? 'mute_' : ''}${platform}.mp4`);
-
-		// Kirim file
-		res.send(buffer);
-	} catch (error) {
-		console.error('Error saat mengunduh:', error);
-		res.status(500).json({ status: "error", details: error.message });
-	}
-});
-
-// Endpoint untuk mengunduh video Twitter
-router.post("/twitter", async (req, res) => {
-	try {
-		const { url } = req.body;
-		console.log('Mencoba mengakses URL Twitter:', url);
-
-		// Konversi URL x.com ke twitter.com jika diperlukan
-		let processedUrl = url;
-		if (url.includes('x.com')) {
-			processedUrl = url.replace('x.com', 'twitter.com');
-		}
-		console.log('URL yang diproses:', processedUrl);
-
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
-			'--dump-json',
-			'--no-check-certificates',
-			'--no-warnings',
-			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-			'--add-header', 'Referer:https://twitter.com/',
-			'--add-header', 'Cookie:auth_token=YOUR_AUTH_TOKEN',  // Tambahkan auth token jika diperlukan
-			'--add-header', 'Authorization:Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',  // Twitter API Bearer Token
-			processedUrl
-		]);
-
-		let output = '';
-		let errorOutput = '';
-
-		process.stdout.on('data', (data) => {
-			output += data.toString();
-			console.log('yt-dlp stdout:', data.toString());
-		});
-
-		process.stderr.on('data', (data) => {
-			errorOutput += data.toString();
-			console.error('yt-dlp stderr:', data.toString());
-		});
-
-		await new Promise((resolve, reject) => {
-			process.on('close', (code) => {
-				console.log('yt-dlp process closed with code:', code);
-				if (code === 0) {
-					resolve();
-				} else {
-					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
-				}
-			});
-		});
-
-		const videoInfo = JSON.parse(output);
-		console.log('Video info:', videoInfo);
-
-		const response = {
-			status: "success",
-			owner: videoInfo.uploader || '',
-			displayUrl: videoInfo.thumbnail || '',
-			caption: videoInfo.description || '',
-			title: videoInfo.title || '',
-			duration: videoInfo.duration || 0,
-			totalViews: videoInfo.view_count || 0,
-			postUrl: processedUrl,
-			dataFormats: []
-		};
-
-		if (videoInfo.formats) {
-			videoInfo.formats.forEach(format => {
-				if (format.url) {
-					response.dataFormats.push({
-						dataDownload: format.url,
-						format: format.format || 'unknown',
-						ext: format.ext || 'mp4',
-						filesize: format.filesize || null,
-						resolution: format.resolution || null,
-						width: format.width || null,
-						height: format.height || null
-					});
-				}
-			});
-		}
-
-		console.log('Data berhasil diekstrak');
-		res.json(response);
-	} catch (error) {
-		console.error('Error saat mengambil data Twitter:', error);
-		res.json({ status: "error", details: error.message });
-	}
-});
-
-// Endpoint untuk mengunduh video Twitch
-router.post("/twitch/download", async (req, res) => {
-	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengunduh video Twitch:', url);
-		console.log('Status mute:', mute);
-		console.log('Status removeMetadata:', shouldRemoveMetadata);
-
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
-
-		// Buat buffer untuk menyimpan data
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
-
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
-			'--format', 'best[ext=mp4]',
+		const ytDlpOptions = [
+			'--format', audioOnly ? 'bestaudio' : 'bestvideo+bestaudio/best',
 			'--output', '-',
 			'--no-check-certificates',
 			'--no-warnings',
 			'--no-playlist',
 			'--no-part',
-			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
-			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-			'--add-header', 'Referer:https://www.twitch.tv/',
-			url
-		]);
+			'--ffmpeg-location', FFMPEG_PATH,
+			processedUrl
+		];
 
-		// Kumpulkan data dari stdout
+		const process = spawn(YT_DLP_PATH, ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
 		process.stdout.on('data', (data) => {
 			buffer = Buffer.concat([buffer, data]);
 		});
@@ -1332,7 +1450,6 @@ router.post("/twitch/download", async (req, res) => {
 			}
 		});
 
-		// Tunggu proses selesai
 		await new Promise((resolve, reject) => {
 			process.on('close', (code) => {
 				if (code === 0) {
@@ -1343,35 +1460,187 @@ router.post("/twitch/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
+		// Proses file sesuai dengan opsi yang dipilih
+		if (audioOnly) {
+			console.log('Mengekstrak dan memproses audio...');
+			buffer = await extractAudio(buffer);
+			
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_${platform}_${Date.now()}.mp3`);
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
 				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
 			}
-		}
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
-			try {
+			if (mute) {
+				console.log('Menghapus audio dari video...');
 				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
-				throw error;
 			}
+
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', `attachment; filename=video_${platform}_${Date.now()}.mp4`);
 		}
 
-		// Kirim data ke client
+		// Kirim file
 		if (buffer.length > 0) {
 			res.setHeader('Content-Length', buffer.length);
 			res.send(buffer);
 		} else {
-			throw new Error('Tidak ada data video yang diterima');
+			throw new Error('Tidak ada data yang diterima');
+		}
+
+	} catch (error) {
+		console.error('Error saat mengunduh:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mengunduh video Twitter
+router.post("/twitter/download", async (req, res) => {
+	try {
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
+		console.log('Mencoba mengunduh dari Twitter:', url);
+		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
+
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
+
+		// Konversi URL x.com ke twitter.com jika diperlukan
+		let processedUrl = url;
+		if (url.includes('x.com')) {
+			processedUrl = url.replace('x.com', 'twitter.com');
+		}
+
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_twitter_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
+
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://twitter.com/',
+			processedUrl
+		] : [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://twitter.com/',
+			processedUrl
+		];
+
+		// Jalankan yt-dlp
+		const process = spawn('yt-dlp', ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
+
+			try {
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn('ffmpeg', [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
+			} catch (error) {
+				console.error('Error saat memproses audio:', error);
+				throw error;
+			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
+		}
+
+		// Kirim file
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data yang diterima');
 		}
 
 		// Handle client disconnect
@@ -1379,7 +1648,158 @@ router.post("/twitch/download", async (req, res) => {
 			process.kill();
 		});
 	} catch (error) {
-		console.error('Error saat mengunduh video Twitch:', error);
+		console.error('Error saat mengunduh:', error);
+		if (!res.headersSent) {
+			res.status(500).json({ 
+				status: "error", 
+				message: error.message 
+			});
+		}
+	}
+});
+
+// Endpoint untuk mengunduh video Twitch
+router.post("/twitch/download", async (req, res) => {
+	try {
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
+		console.log('Mencoba mengunduh dari Twitch:', url);
+		console.log('Status mute:', mute);
+		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
+
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
+
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_twitch_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
+
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.twitch.tv/',
+			url
+		] : [
+			'--format', 'best[ext=mp4]',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--no-part',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.twitch.tv/',
+			url
+		];
+
+		// Jalankan yt-dlp
+		const process = spawn('yt-dlp', ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
+		process.stdout.on('data', (data) => {
+			buffer = Buffer.concat([buffer, data]);
+		});
+
+		process.stderr.on('data', (data) => {
+			errorOutput += data.toString();
+			console.error(`yt-dlp error: ${data}`);
+		});
+
+		process.on('error', (error) => {
+			console.error('Process error:', error);
+			if (!res.headersSent) {
+				res.status(500).json({ 
+					status: "error", 
+					message: `Error saat menjalankan yt-dlp: ${error.message}` 
+				});
+			}
+		});
+
+		await new Promise((resolve, reject) => {
+			process.on('close', (code) => {
+				if (code === 0) {
+					resolve();
+				} else {
+					reject(new Error(`yt-dlp process failed with code ${code}: ${errorOutput}`));
+				}
+			});
+		});
+
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
+
+			try {
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn('ffmpeg', [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
+			} catch (error) {
+				console.error('Error saat memproses audio:', error);
+				throw error;
+			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
+		}
+
+		// Kirim file
+		if (buffer.length > 0) {
+			res.setHeader('Content-Length', buffer.length);
+			res.send(buffer);
+		} else {
+			throw new Error('Tidak ada data yang diterima');
+		}
+
+		// Handle client disconnect
+		req.on('close', () => {
+			process.kill();
+		});
+	} catch (error) {
+		console.error('Error saat mengunduh:', error);
 		if (!res.headersSent) {
 			res.status(500).json({ 
 				status: "error", 
@@ -1392,21 +1812,41 @@ router.post("/twitch/download", async (req, res) => {
 // Endpoint untuk mengunduh video Dailymotion
 router.post("/dailymotion/download", async (req, res) => {
 	try {
-		const { url, mute = false, shouldRemoveMetadata = true } = req.body;
-		console.log('Mencoba mengunduh video Dailymotion:', url);
+		const { url, mute = false, shouldRemoveMetadata = true, audioOnly = false } = req.body;
+		console.log('Mencoba mengunduh dari Dailymotion:', url);
 		console.log('Status mute:', mute);
 		console.log('Status removeMetadata:', shouldRemoveMetadata);
+		console.log('Status audioOnly:', audioOnly);
 
-		// Set header untuk download
-		res.setHeader('Content-Type', 'video/mp4');
-		res.setHeader('Content-Disposition', 'attachment');
+		// Validasi kombinasi opsi yang tidak valid
+		if (audioOnly && mute) {
+			throw new Error('Tidak bisa mengaktifkan mute saat mode audio aktif');
+		}
 
-		// Buat buffer untuk menyimpan data
-		let buffer = Buffer.alloc(0);
-		let errorOutput = '';
+		// Set header sesuai dengan tipe konten
+		if (audioOnly) {
+			res.setHeader('Content-Type', 'audio/mpeg');
+			res.setHeader('Content-Disposition', `attachment; filename=audio_dailymotion_${Date.now()}.mp3`);
+		} else {
+			res.setHeader('Content-Type', 'video/mp4');
+			res.setHeader('Content-Disposition', 'attachment');
+		}
 
-		// Jalankan yt-dlp dengan opsi yang lebih baik
-		const process = spawn('yt-dlp', [
+		// Opsi yt-dlp berdasarkan tipe konten
+		const ytDlpOptions = audioOnly ? [
+			'--extract-audio',
+			'--audio-format', 'mp3',
+			'--audio-quality', '0',
+			'--postprocessor-args', '-ar 44100',
+			'--output', '-',
+			'--no-check-certificates',
+			'--no-warnings',
+			'--no-playlist',
+			'--ffmpeg-location', '/opt/homebrew/bin/ffmpeg',
+			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+			'--add-header', 'Referer:https://www.dailymotion.com/',
+			url
+		] : [
 			'--format', 'best[ext=mp4]',
 			'--output', '-',
 			'--no-check-certificates',
@@ -1417,9 +1857,13 @@ router.post("/dailymotion/download", async (req, res) => {
 			'--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
 			'--add-header', 'Referer:https://www.dailymotion.com/',
 			url
-		]);
+		];
 
-		// Kumpulkan data dari stdout
+		// Jalankan yt-dlp
+		const process = spawn('yt-dlp', ytDlpOptions);
+		let buffer = Buffer.alloc(0);
+		let errorOutput = '';
+
 		process.stdout.on('data', (data) => {
 			buffer = Buffer.concat([buffer, data]);
 		});
@@ -1439,7 +1883,6 @@ router.post("/dailymotion/download", async (req, res) => {
 			}
 		});
 
-		// Tunggu proses selesai
 		await new Promise((resolve, reject) => {
 			process.on('close', (code) => {
 				if (code === 0) {
@@ -1450,35 +1893,56 @@ router.post("/dailymotion/download", async (req, res) => {
 			});
 		});
 
-		// Hapus metadata dari video jika opsi diaktifkan
-		if (shouldRemoveMetadata) {
-			console.log('Menghapus metadata...');
-			try {
-				buffer = await removeMetadata(buffer);
-				console.log('Metadata berhasil dihapus');
-			} catch (error) {
-				console.error('Error saat menghapus metadata:', error);
-			}
-		}
+		if (audioOnly) {
+			// Proses audio dengan ffmpeg untuk kualitas terbaik
+			const tempInput = path.join(os.tmpdir(), `input-${Date.now()}.mp3`);
+			const tempOutput = path.join(os.tmpdir(), `output-${Date.now()}.mp3`);
 
-		// Hapus audio jika diminta
-		if (mute) {
-			console.log('Menghapus audio dari video...');
 			try {
-				buffer = await removeAudio(buffer);
-				console.log('Audio berhasil dihapus');
+				fs.writeFileSync(tempInput, buffer);
+				
+				const ffmpeg = spawn('ffmpeg', [
+					'-i', tempInput,
+					'-vn',
+					'-acodec', 'libmp3lame',
+					'-ab', '320k',
+					'-ar', '44100',
+					'-y',
+					tempOutput
+				]);
+
+				await new Promise((resolve, reject) => {
+					ffmpeg.on('close', (code) => {
+						if (code === 0) resolve();
+						else reject(new Error('Gagal memproses audio'));
+					});
+				});
+
+				buffer = fs.readFileSync(tempOutput);
+				fs.unlinkSync(tempInput);
+				fs.unlinkSync(tempOutput);
 			} catch (error) {
-				console.error('Error saat menghapus audio:', error);
+				console.error('Error saat memproses audio:', error);
 				throw error;
 			}
+		} else {
+			if (shouldRemoveMetadata) {
+				console.log('Menghapus metadata...');
+				buffer = await removeMetadata(buffer);
+			}
+
+			if (mute) {
+				console.log('Menghapus audio dari video...');
+				buffer = await removeAudio(buffer);
+			}
 		}
 
-		// Kirim data ke client
+		// Kirim file
 		if (buffer.length > 0) {
 			res.setHeader('Content-Length', buffer.length);
 			res.send(buffer);
 		} else {
-			throw new Error('Tidak ada data video yang diterima');
+			throw new Error('Tidak ada data yang diterima');
 		}
 
 		// Handle client disconnect
@@ -1486,7 +1950,7 @@ router.post("/dailymotion/download", async (req, res) => {
 			process.kill();
 		});
 	} catch (error) {
-		console.error('Error saat mengunduh video Dailymotion:', error);
+		console.error('Error saat mengunduh:', error);
 		if (!res.headersSent) {
 			res.status(500).json({ 
 				status: "error", 
@@ -1497,3 +1961,4 @@ router.post("/dailymotion/download", async (req, res) => {
 });
 
 module.exports = router;
+

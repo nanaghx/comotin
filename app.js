@@ -31,6 +31,16 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Logging middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`${req.method} ${req.originalUrl} - Status: ${res.statusCode} - Duration: ${duration}ms`);
+    });
+    next();
+});
+
 // Terapkan rate limiting ke semua route API
 app.use('/api', limiter);
 
@@ -42,12 +52,39 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Error handling untuk route yang tidak ditemukan
+app.use((req, res, next) => {
+    res.status(404).json({
+        status: 'error',
+        message: 'Route tidak ditemukan'
+    });
+});
+
 // Error handling umum
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({
+    
+    // Handle specific errors
+    if (err.name === 'ValidationError') {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Data tidak valid',
+            details: err.message
+        });
+    }
+    
+    if (err.name === 'RateLimitError') {
+        return res.status(429).json({
+            status: 'error',
+            message: 'Terlalu banyak request',
+            details: err.message
+        });
+    }
+
+    // Default error response
+    res.status(err.status || 500).json({
         status: 'error',
-        message: 'Terjadi kesalahan internal server'
+        message: err.message || 'Terjadi kesalahan internal server'
     });
 });
 
