@@ -29,10 +29,6 @@ API untuk mengunduh video dari berbagai platform media sosial seperti Instagram,
 ## ⚙️ Instalasi
 
 1. **Clone Repository**
-```bash
-git clone https://github.com/username/social-media-api.git
-cd social-media-api
-```
 
 2. **Install Dependencies**
 ```bash
