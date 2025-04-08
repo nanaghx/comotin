@@ -277,27 +277,9 @@ Download seluruh video dalam playlist YouTube.
 
 Kontribusi selalu diterima! Silakan buat pull request atau laporkan issues.
 
-## 📄 Lisensi
-
-Project ini dilisensikan di bawah [MIT License](LICENSE).
-
-## 👨‍💻 Author
-
-- [Alfi Firdaus](https://github.com/masalfi)
 
 ## 🙏 Acknowledgments
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - [FFmpeg](https://ffmpeg.org/)
 - [Node.js](https://nodejs.org/)
-
-## 📞 Kontak & Dukungan
-
-Jika Anda membutuhkan:
-- Akses khusus untuk domain Anda
-- Bantuan teknis lainnya
-
-Silakan hubungi:
-- Email: [masalfi@gmail.com](mailto:masalfi@gmail.com)
-- GitHub: [@masalfi](https://github.com/masalfi)
-
