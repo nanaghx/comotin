@@ -1,281 +1,293 @@
 # 📥 Social Media Downloader API
 
-API untuk mengunduh video dari berbagai platform media sosial seperti Instagram, YouTube, TikTok, dan Facebook.
+An API for downloading videos from various social‑media platforms such as Instagram, YouTube, TikTok, and Facebook.
 
-## ✨ Fitur Utama
+## ✨ Key Features
 
-- 🎥 Download video dari multiple platform:
-  - YouTube (video & playlist)
-  - TikTok 
-  - Facebook
-  - Instagram
-- 🔍 Deteksi platform otomatis
-- 📊 Multiple format & kualitas video
-- 🗑️ Opsi penghapusan metadata
-- 💾 Download tanpa watermark (untuk TikTok)
-- 📝 Informasi lengkap video (judul, deskripsi, dll)
-- 🔒 Keamanan:
-  - Public API Access
-  - Request Validation
+* 🎥 **Multi‑platform video downloads**
 
-## 🛠️ Prasyarat
+  * YouTube (single videos & playlists)
+  * TikTok
+  * Facebook
+  * Instagram
+* 🔍 Automatic platform detection
+* 📊 Multiple video formats & quality options
+* 🗑️ Metadata‑stripping option
+* 💾 Watermark‑free downloads (TikTok)
+* 📝 Detailed video info (title, description, etc.)
+* 🔒 Security
 
-- Node.js (v14+)
-- FFmpeg
-- yt-dlp
-- Express.js
-- Puppeteer (untuk scraping)
+  * Public API access
+  * Request validation
 
-## ⚙️ Instalasi
+## 🛠️ Prerequisites
 
-1. **Clone Repository**
+* Node.js (v14+)
+* FFmpeg
+* yt‑dlp
+* Express.js
+* Puppeteer (for scraping)
 
-2. **Install Dependencies**
-```bash
-npm install
-```
+## ⚙️ Installation
+
+1. **Clone the repository**
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
 
 3. **Install FFmpeg**
-```bash
-# macOS
-brew install ffmpeg
 
-# Ubuntu/Debian
-sudo apt-get install ffmpeg
+   ```bash
+   # macOS
+   brew install ffmpeg
 
-# Windows
-# Download dari https://ffmpeg.org/download.html
-```
+   # Ubuntu/Debian
+   sudo apt-get install ffmpeg
 
-4. **Install yt-dlp**
-```bash
-# macOS
-brew install yt-dlp
+   # Windows
+   # Download from https://ffmpeg.org/download.html
+   ```
 
-# Ubuntu/Debian
-sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-sudo chmod a+rx /usr/local/bin/yt-dlp
+4. **Install yt‑dlp**
 
-# Windows
-# Download dari https://github.com/yt-dlp/yt-dlp/releases
-```
+   ```bash
+   # macOS
+   brew install yt-dlp
 
-5. **Jalankan Server**
-```bash
-node app.js
-```
+   # Ubuntu/Debian
+   sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+   sudo chmod a+rx /usr/local/bin/yt-dlp
 
-Server akan berjalan di `http://localhost:3000`
+   # Windows
+   # Download from https://github.com/yt-dlp/yt-dlp/releases
+   ```
 
-## 📚 Dokumentasi API
+5. **Start the server**
 
-### 1. Deteksi Platform
-Mendeteksi platform dari URL video yang diberikan.
+   ```bash
+   node app.js
+   ```
+
+   The server will run at `http://localhost:3000`.
+
+## 📚 API Documentation
+
+### 1. Detect Platform
+
+Identify the platform from a given video URL.
 
 **Endpoint:** `POST /api/detect-platform`
 
-**Request Body:**
+**Request Body**
+
 ```json
 {
-    "url": "https://www.instagram.com/p/example"
+  "url": "https://www.instagram.com/p/example"
 }
 ```
 
-**Response Success:**
+**Success Response**
+
 ```json
 {
-    "status": "success",
-    "platform": "instagram",
-    "owner": "username",
-    "displayUrl": "thumbnail_url",
-    "caption": "video_caption",
-    "title": "video_title",
-    "duration": 60,
-    "totalViews": 1000,
-    "postUrl": "original_url",
-    "dataFormats": [
-        {
-            "dataDownload": "download_url",
-            "format": "720p",
-            "ext": "mp4",
-            "filesize": 1234567
-        }
-    ]
+  "status": "success",
+  "platform": "instagram",
+  "owner": "username",
+  "displayUrl": "thumbnail_url",
+  "caption": "video_caption",
+  "title": "video_title",
+  "duration": 60,
+  "totalViews": 1000,
+  "postUrl": "original_url",
+  "dataFormats": [
+    {
+      "dataDownload": "download_url",
+      "format": "720p",
+      "ext": "mp4",
+      "filesize": 1234567
+    }
+  ]
 }
 ```
 
-### 2. Download Video Instagram
-Download video dari Instagram (post/reels).
+---
+
+### 2. Download Instagram Video
+
+Download an Instagram post or reel.
 
 **Endpoint:** `POST /api/instagram/download`
 
-**Request Body:**
+**Request Body**
+
 ```json
 {
-    "url": "https://www.instagram.com/p/example",
-    "mute": false,
-    "shouldRemoveMetadata": true
+  "url": "https://www.instagram.com/p/example",
+  "mute": false,
+  "shouldRemoveMetadata": true
 }
 ```
 
-**Parameter:**
-- `url`: URL video Instagram (wajib)
-- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+**Parameters**
 
-### 3. Download Video YouTube
-Download video dari YouTube dengan berbagai opsi kualitas.
+| Name                   | Type    | Description         | Default      |
+| ---------------------- | ------- | ------------------- | ------------ |
+| `url`                  | string  | Instagram video URL | **required** |
+| `mute`                 | boolean | Strip audio         | `false`      |
+| `shouldRemoveMetadata` | boolean | Strip metadata      | `true`       |
+
+---
+
+### 3. Download YouTube Video
+
+Download a YouTube video with quality options.
 
 **Endpoint:** `POST /api/youtube/download`
 
-**Request Body:**
+**Request Body**
+
 ```json
 {
-    "url": "https://www.youtube.com/watch?v=example",
-    "mute": false,
-    "shouldRemoveMetadata": true
+  "url": "https://www.youtube.com/watch?v=example",
+  "mute": false,
+  "shouldRemoveMetadata": true
 }
 ```
 
-**Parameter:**
-- `url`: URL video YouTube (wajib)
-- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+Parameters are identical to the Instagram endpoint.
 
-### 4. Download Video TikTok
-Download video TikTok tanpa watermark.
+---
+
+### 4. Download TikTok Video
+
+Download a TikTok video without watermark.
 
 **Endpoint:** `POST /api/tiktok/download`
 
-**Request Body:**
-```json
-{
-    "url": "https://www.tiktok.com/@username/video/example",
-    "mute": false,
-    "shouldRemoveMetadata": true
-}
-```
+Request body and parameters are the same as above.
 
-**Parameter:**
-- `url`: URL video TikTok (wajib)
-- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+---
 
-### 5. Download Video Facebook
-Download video dari Facebook dengan kualitas terbaik.
+### 5. Download Facebook Video
+
+Download a Facebook video at the best quality.
 
 **Endpoint:** `POST /api/facebook/download`
 
-**Request Body:**
-```json
-{
-    "url": "https://www.facebook.com/watch?v=example",
-    "mute": false,
-    "shouldRemoveMetadata": true
-}
-```
+Request body and parameters are the same as above.
 
-**Parameter:**
-- `url`: URL video Facebook (wajib)
-- `mute`: Boolean, untuk menghapus audio (opsional, default: false)
-- `shouldRemoveMetadata`: Boolean, untuk menghapus metadata (opsional, default: true)
+---
 
-### 6. Download Playlist YouTube
-Download seluruh video dalam playlist YouTube.
+### 6. Download YouTube Playlist
+
+Download every video in a YouTube playlist.
 
 **Endpoint:** `POST /api/youtube-playlist`
 
-**Request Body:**
+**Request Body**
+
 ```json
 {
-    "url": "https://www.youtube.com/playlist?list=example"
+  "url": "https://www.youtube.com/playlist?list=example"
 }
 ```
 
-**Parameter:**
-- `url`: URL playlist YouTube (wajib)
+**Parameter**
 
-**Response:**
+| Name  | Type   | Description                         |
+| ----- | ------ | ----------------------------------- |
+| `url` | string | YouTube playlist URL (**required**) |
+
+**Success Response**
+
 ```json
 {
-    "status": "success",
-    "dataDownloads": [
+  "status": "success",
+  "dataDownloads": [
+    {
+      "ownerUrl": "channel_url",
+      "ownerId": "channel_id",
+      "channelUrl": "channel_url",
+      "uploader": "channel_name",
+      "totalViews": 1000,
+      "urlId": "video_id",
+      "thumbnail": "thumbnail_url",
+      "description": "video_description",
+      "filename": "video_filename",
+      "duration": 60,
+      "title": "video_title",
+      "categories": ["category1", "category2"],
+      "dataFormats": [
         {
-            "ownerUrl": "channel_url",
-            "ownerId": "channel_id",
-            "channelUrl": "channel_url",
-            "uploader": "channel_name",
-            "totalViews": 1000,
-            "urlId": "video_id",
-            "thumbnail": "thumbnail_url",
-            "description": "video_description",
-            "filename": "video_filename",
-            "duration": 60,
-            "title": "video_title",
-            "categories": ["category1", "category2"],
-            "dataFormats": [
-                {
-                    "dataDownload": "download_url",
-                    "format": "720p",
-                    "ext": "mp4",
-                    "filesize": 1234567
-                }
-            ]
+          "dataDownload": "download_url",
+          "format": "720p",
+          "ext": "mp4",
+          "filesize": 1234567
         }
-    ]
-}
-```
-
-## 🔍 Format Response
-
-### Success Response
-```json
-{
-    "status": "success",
-    "data": {
-        // Data spesifik untuk setiap platform
+      ]
     }
+  ]
 }
 ```
 
-### Error Response
+## 🔍 Response Format
+
+### Success
+
 ```json
 {
-    "status": "error",
-    "message": "Pesan error spesifik"
+  "status": "success",
+  "data": {
+    // Platform‑specific data
+  }
 }
 ```
 
-## 🔐 Keamanan & Batasan API
+### Error
 
-1. **Akses API:**
-   - API dapat diakses dari domain manapun
-   - Tidak ada pembatasan CORS
-   - Tidak ada batasan jumlah request
-   - Cocok untuk penggunaan publik
+```json
+{
+  "status": "error",
+  "message": "Specific error message"
+}
+```
 
-2. **Validasi Request:**
-   - Setiap request akan divalidasi
-   - URL video harus valid dan dapat diakses
-   - Format request body harus sesuai dokumentasi
+## 🔐 Security & API Limits
 
-3. **Pembatasan Bandwidth:**
-   - Ada batasan ukuran file yang dapat didownload
-   - Video yang terlalu besar mungkin ditolak
-   - Gunakan format video yang sesuai kebutuhan
+1. **API Access**
 
-4. **Penggunaan API:**
-   - API ini untuk penggunaan publik
-   - Harap gunakan dengan bijak
-   - Hindari penggunaan yang berlebihan
+   * Accessible from any domain
+   * No CORS restrictions
+   * No request‑rate limits
+   * Suitable for public use
 
-## 🤝 Kontribusi
+2. **Request Validation**
 
-Kontribusi selalu diterima! Silakan buat pull request atau laporkan issues.
+   * Every request is validated
+   * Video URL must be valid and reachable
+   * Request body must follow the docs
 
+3. **Bandwidth Limits**
+
+   * File‑size limits apply
+   * Very large videos may be rejected
+   * Choose formats appropriate to your needs
+
+4. **API Usage**
+
+   * Designed for public use
+   * Please use responsibly
+   * Avoid excessive usage
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to open pull requests or file issues.
 
 ## 🙏 Acknowledgments
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [FFmpeg](https://ffmpeg.org/)
-- [Node.js](https://nodejs.org/)
+* [yt‑dlp](https://github.com/yt-dlp/yt-dlp)
+* [FFmpeg](https://ffmpeg.org/)
+* [Node.js](https://nodejs.org/)
